@@ -1,0 +1,558 @@
+using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Logging;
+using Opc.Ua;
+using Opc.Ua.Client;
+using Opc.Ua.Configuration;
+
+namespace OpcUaAddressSpaceChecker.OpcUa;
+
+/// <summary>
+/// Fluent builder for creating and configuring OPC UA client connections.
+/// </summary>
+public class OpcUaClientBuilder
+{
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger<OpcUaClientBuilder> _logger;
+    private string _endpoint = string.Empty;
+    private MessageSecurityMode _securityMode = MessageSecurityMode.None;
+    private string _securityPolicy = SecurityPolicies.None;
+    private AuthenticationMode _authMode = AuthenticationMode.Anonymous;
+    private string? _username;
+    private string? _password;
+    private X509Certificate2? _clientCertificate;
+    private bool _trustAllCertificates = true;
+    private int _retryCount = 3;
+    private TimeSpan _retryDelay = TimeSpan.FromSeconds(5);
+    private int _keepAliveIntervalSeconds = 5;
+    private int _sessionTimeoutSeconds = 120;
+    private int _keepAliveFailureThreshold = 3;
+    private string _applicationName = "OpcUaAddressSpaceChecker";
+    private CertificateManager? _certificateManager;
+
+    private OpcUaClientBuilder(ILoggerFactory loggerFactory)
+    {
+        _loggerFactory = loggerFactory;
+        _logger = loggerFactory.CreateLogger<OpcUaClientBuilder>();
+    }
+
+    /// <summary>
+    /// Creates a new OPC UA client builder instance.
+    /// </summary>
+    /// <param name="loggerFactory">The logger factory to use.</param>
+    /// <returns>A new builder instance.</returns>
+    public static OpcUaClientBuilder Create(ILoggerFactory loggerFactory)
+    {
+        return new OpcUaClientBuilder(loggerFactory);
+    }
+
+    /// <summary>
+    /// Sets the OPC UA server endpoint URL.
+    /// </summary>
+    public OpcUaClientBuilder WithEndpoint(string endpoint)
+    {
+        _endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the security mode for the connection.
+    /// </summary>
+    public OpcUaClientBuilder WithSecurityMode(MessageSecurityMode securityMode)
+    {
+        _securityMode = securityMode;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the security policy for the connection.
+    /// </summary>
+    public OpcUaClientBuilder WithSecurityPolicy(string securityPolicy)
+    {
+        _securityPolicy = securityPolicy ?? SecurityPolicies.None;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures anonymous authentication.
+    /// </summary>
+    public OpcUaClientBuilder WithAnonymousAuthentication()
+    {
+        _authMode = AuthenticationMode.Anonymous;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures username/password authentication.
+    /// </summary>
+    public OpcUaClientBuilder WithUserNameAuthentication(string username, string password)
+    {
+        _authMode = AuthenticationMode.UserName;
+        _username = username ?? throw new ArgumentNullException(nameof(username));
+        _password = password ?? throw new ArgumentNullException(nameof(password));
+        return this;
+    }
+
+    /// <summary>
+    /// Configures certificate-based authentication.
+    /// </summary>
+    public OpcUaClientBuilder WithCertificateAuthentication(X509Certificate2 certificate)
+    {
+        _authMode = AuthenticationMode.Certificate;
+        _clientCertificate = certificate ?? throw new ArgumentNullException(nameof(certificate));
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the client certificate to use (for signing/encryption, not necessarily authentication).
+    /// </summary>
+    public OpcUaClientBuilder WithClientCertificate(X509Certificate2? certificate)
+    {
+        _clientCertificate = certificate;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the client to trust all server certificates.
+    /// </summary>
+    public OpcUaClientBuilder TrustAllServerCertificates(bool trust = true)
+    {
+        _trustAllCertificates = trust;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures reconnection behavior on disconnect.
+    /// </summary>
+    public OpcUaClientBuilder WithReconnectOnDisconnect(int retryCount = 3, TimeSpan? retryDelay = null)
+    {
+        _retryCount = retryCount;
+        _retryDelay = retryDelay ?? TimeSpan.FromSeconds(5);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the keep-alive interval in seconds.
+    /// </summary>
+    /// <param name="intervalSeconds">Interval between keep-alive requests.</param>
+    public OpcUaClientBuilder WithKeepAliveInterval(int intervalSeconds)
+    {
+        _keepAliveIntervalSeconds = intervalSeconds > 0 ? intervalSeconds : 5;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the session timeout in seconds.
+    /// </summary>
+    /// <param name="timeoutSeconds">Maximum time the server keeps the session alive without communication.</param>
+    public OpcUaClientBuilder WithSessionTimeout(int timeoutSeconds)
+    {
+        _sessionTimeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 120;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the number of consecutive missed keep-alive responses before triggering reconnection.
+    /// </summary>
+    /// <param name="threshold">Number of missed keep-alives before reconnecting.</param>
+    public OpcUaClientBuilder WithKeepAliveFailureThreshold(int threshold)
+    {
+        _keepAliveFailureThreshold = threshold > 0 ? threshold : 3;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the application name for the OPC UA client.
+    /// </summary>
+    public OpcUaClientBuilder WithApplicationName(string applicationName)
+    {
+        _applicationName = applicationName ?? throw new ArgumentNullException(nameof(applicationName));
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the certificate manager to use.
+    /// </summary>
+    public OpcUaClientBuilder WithCertificateManager(CertificateManager certificateManager)
+    {
+        _certificateManager = certificateManager ?? throw new ArgumentNullException(nameof(certificateManager));
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the builder from options.
+    /// </summary>
+    public OpcUaClientBuilder FromOptions(OpcUaClientOptions options)
+    {
+        _endpoint = options.Endpoint;
+        _securityMode = options.SecurityMode;
+        _securityPolicy = options.SecurityPolicy;
+        _authMode = options.AuthMode;
+        _username = options.Username;
+        _password = options.Password;
+        _clientCertificate = options.Certificate;
+        _retryCount = options.RetryCount;
+        _retryDelay = TimeSpan.FromSeconds(options.RetryDelaySeconds);
+        _keepAliveIntervalSeconds = options.KeepAliveIntervalSeconds;
+        _sessionTimeoutSeconds = options.SessionTimeoutSeconds;
+        _keepAliveFailureThreshold = options.KeepAliveFailureThreshold;
+        _applicationName = options.ApplicationName;
+        return this;
+    }
+
+    /// <summary>
+    /// Builds and connects the OPC UA client.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A connected OPC UA client wrapper.</returns>
+    public async Task<OpcUaClient> ConnectAsync(CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(_endpoint))
+        {
+            throw new InvalidOperationException("Endpoint must be specified.");
+        }
+
+        var certManager = _certificateManager ??
+            new CertificateManager(_loggerFactory.CreateLogger<CertificateManager>());
+
+        // Build application configuration
+        var config = await BuildApplicationConfigurationAsync(certManager).ConfigureAwait(false);
+
+        // Create and connect with retry logic
+        var session = await ConnectWithRetryAsync(config, certManager, cancellationToken).ConfigureAwait(false);
+
+        return new OpcUaClient(
+            session,
+            config,
+            _loggerFactory,
+            _retryCount,
+            _retryDelay,
+            _keepAliveFailureThreshold);
+    }
+
+    private async Task<ApplicationConfiguration> BuildApplicationConfigurationAsync(CertificateManager certManager)
+    {
+        var applicationUri = $"urn:{Environment.MachineName}:{_applicationName}";
+
+        var config = new ApplicationConfiguration
+        {
+            ApplicationName = _applicationName,
+            ApplicationType = ApplicationType.Client,
+            ApplicationUri = applicationUri,
+            ProductUri = "https://github.com/OpcUaAddressSpaceChecker",
+            SecurityConfiguration = certManager.CreateSecurityConfiguration(_applicationName),
+            TransportConfigurations = new TransportConfigurationCollection(),
+            TransportQuotas = new TransportQuotas
+            {
+                OperationTimeout = 120000,
+                MaxStringLength = 4 * 1024 * 1024,
+                MaxByteStringLength = 4 * 1024 * 1024,
+                MaxArrayLength = 65535,
+                MaxMessageSize = 16 * 1024 * 1024,
+                MaxBufferSize = 65535,
+                ChannelLifetime = 300000,
+                SecurityTokenLifetime = 3600000
+            },
+            ClientConfiguration = new ClientConfiguration
+            {
+                DefaultSessionTimeout = _sessionTimeoutSeconds * 1000,
+                MinSubscriptionLifetime = 10000
+            },
+            TraceConfiguration = new TraceConfiguration()
+        };
+
+        // Validate and update configuration
+        await config.ValidateAsync(ApplicationType.Client).ConfigureAwait(false);
+
+        // Get or create application certificate
+        if (_clientCertificate == null && _securityMode != MessageSecurityMode.None)
+        {
+            _clientCertificate = await certManager.GetOrCreateApplicationCertificateAsync(
+                _applicationName, applicationUri).ConfigureAwait(false);
+        }
+
+        if (_clientCertificate != null)
+        {
+            config.SecurityConfiguration.ApplicationCertificate.Certificate = _clientCertificate;
+        }
+
+        // Configure certificate validation
+        if (_trustAllCertificates)
+        {
+            config.CertificateValidator.CertificateValidation += (sender, e) =>
+            {
+                _logger.LogDebug("Auto-accepting certificate: {Subject} (Status: {Status})",
+                    e.Certificate.Subject, e.Error?.StatusCode);
+                e.Accept = true;
+            };
+        }
+
+        return config;
+    }
+
+    private async Task<ISession> ConnectWithRetryAsync(
+        ApplicationConfiguration config,
+        CertificateManager certManager,
+        CancellationToken cancellationToken)
+    {
+        Exception? lastException = null;
+
+        for (int attempt = 0; attempt <= _retryCount; attempt++)
+        {
+            try
+            {
+                if (attempt > 0)
+                {
+                    var delay = TimeSpan.FromSeconds(_retryDelay.TotalSeconds * Math.Pow(2, attempt - 1));
+                    _logger.LogWarning("Connection attempt {Attempt}/{Total} failed. Retrying in {Delay}s...",
+                        attempt, _retryCount + 1, delay.TotalSeconds);
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+
+                _logger.LogInformation("Connecting to {Endpoint} (attempt {Attempt}/{Total})...",
+                    _endpoint, attempt + 1, _retryCount + 1);
+
+                return await CreateSessionAsync(config, certManager, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (IsTransientError(ex))
+            {
+                lastException = ex;
+                _logger.LogWarning(ex, "Transient connection error on attempt {Attempt}", attempt + 1);
+
+                if (attempt == _retryCount)
+                {
+                    throw new OpcUaConnectionException(
+                        $"Failed to connect to {_endpoint} after {_retryCount + 1} attempts.",
+                        lastException);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Non-transient connection error");
+                throw;
+            }
+        }
+
+        throw new OpcUaConnectionException(
+            $"Failed to connect to {_endpoint} after {_retryCount + 1} attempts.",
+            lastException);
+    }
+
+    private async Task<ISession> CreateSessionAsync(
+        ApplicationConfiguration config,
+        CertificateManager certManager,
+        CancellationToken cancellationToken)
+    {
+        // Discover endpoints using async endpoint selection
+        var endpointUrl = new Uri(_endpoint);
+        var endpointCollection = await DiscoverEndpointsAsync(config, endpointUrl, cancellationToken).ConfigureAwait(false);
+
+        // Select the best matching endpoint
+        var selectedEndpoint = SelectBestEndpoint(endpointCollection);
+        var discoveredEndpointUrl = selectedEndpoint.EndpointUrl;
+        var effectiveEndpointUrl = GetEffectiveSessionEndpointUrl(endpointUrl, discoveredEndpointUrl);
+
+        if (!string.Equals(discoveredEndpointUrl, effectiveEndpointUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation(
+                "Using requested endpoint authority for session. Requested: {RequestedUrl}, Discovered: {DiscoveredUrl}, Effective: {EffectiveUrl}",
+                _endpoint,
+                discoveredEndpointUrl,
+                effectiveEndpointUrl);
+        }
+
+        selectedEndpoint.EndpointUrl = effectiveEndpointUrl;
+        _logger.LogDebug(
+            "Requested endpoint URL: {RequestedUrl}. Discovered endpoint URL: {DiscoveredUrl}. Effective session endpoint URL: {EffectiveUrl}",
+            _endpoint,
+            discoveredEndpointUrl,
+            effectiveEndpointUrl);
+
+        // If the selected endpoint requires security, ensure we have a certificate
+        if (selectedEndpoint.SecurityMode != MessageSecurityMode.None && _clientCertificate == null)
+        {
+            _logger.LogInformation("Selected endpoint requires security ({SecurityPolicy}). Provisioning application certificate...",
+                selectedEndpoint.SecurityPolicyUri);
+            _clientCertificate = await certManager.GetOrCreateApplicationCertificateAsync(
+                _applicationName, config.ApplicationUri).ConfigureAwait(false);
+            config.SecurityConfiguration.ApplicationCertificate.Certificate = _clientCertificate;
+        }
+
+        // Apply security settings if specified
+        if (_securityMode != MessageSecurityMode.None)
+        {
+            selectedEndpoint.SecurityMode = _securityMode;
+            selectedEndpoint.SecurityPolicyUri = _securityPolicy;
+        }
+
+        var endpointConfiguration = EndpointConfiguration.Create(config);
+        var endpoint = new ConfiguredEndpoint(null, selectedEndpoint, endpointConfiguration);
+
+        // Create user identity
+        var userIdentity = CreateUserIdentity();
+
+        // Create session using session factory
+        // Note: Using legacy Session.Create API - new ISessionFactory API has different signature requirements
+#pragma warning disable CS0618 // Type or member is obsolete
+        var session = await Session.Create(
+            config,
+            endpoint,
+            false,
+            false,
+            _applicationName,
+            (uint)(_sessionTimeoutSeconds * 1000),
+            userIdentity,
+            null,
+            cancellationToken).ConfigureAwait(false);
+#pragma warning restore CS0618
+
+        // Configure keep-alive interval
+        session.KeepAliveInterval = _keepAliveIntervalSeconds * 1000;
+
+        _logger.LogInformation("Connected to {Endpoint}. Session ID: {SessionId}, KeepAlive: {KeepAlive}s, Timeout: {Timeout}s",
+            _endpoint, session.SessionId, _keepAliveIntervalSeconds, _sessionTimeoutSeconds);
+
+        return session;
+    }
+
+    private async Task<EndpointDescriptionCollection> DiscoverEndpointsAsync(
+        ApplicationConfiguration config,
+        Uri endpointUrl,
+        CancellationToken cancellationToken)
+    {
+        // Create discovery client with endpoint configuration
+        var endpointConfiguration = EndpointConfiguration.Create(config);
+
+        // Note: Using legacy DiscoveryClient.Create API - new async API has different signature requirements
+#pragma warning disable CS0618 // Type or member is obsolete
+        using var discoveryClient = DiscoveryClient.Create(endpointUrl, endpointConfiguration);
+#pragma warning restore CS0618
+
+        // Get endpoints from server
+        var endpoints = await discoveryClient.GetEndpointsAsync(null, cancellationToken).ConfigureAwait(false);
+
+        return endpoints;
+    }
+
+    private EndpointDescription SelectBestEndpoint(EndpointDescriptionCollection endpoints)
+    {
+        // First try to find an endpoint matching the requested security mode
+        var matchingEndpoint = endpoints.FirstOrDefault(e =>
+            e.SecurityMode == _securityMode &&
+            (_securityPolicy == SecurityPolicies.None || e.SecurityPolicyUri == _securityPolicy));
+
+        if (matchingEndpoint != null)
+        {
+            return matchingEndpoint;
+        }
+
+        // If no match found, try to find any endpoint with the requested security mode
+        matchingEndpoint = endpoints.FirstOrDefault(e => e.SecurityMode == _securityMode);
+
+        if (matchingEndpoint != null)
+        {
+            return matchingEndpoint;
+        }
+
+        // Fall back to the first endpoint
+        if (endpoints.Count > 0)
+        {
+            _logger.LogWarning("No endpoint matching security requirements found. Using first available endpoint.");
+            return endpoints[0];
+        }
+
+        throw new ServiceResultException(StatusCodes.BadNoMatch, "No suitable endpoint found on server.");
+    }
+
+    internal static string GetEffectiveSessionEndpointUrl(Uri requestedEndpointUrl, string discoveredEndpointUrl)
+    {
+        if (!Uri.TryCreate(discoveredEndpointUrl, UriKind.Absolute, out var discoveredEndpointUri))
+        {
+            return requestedEndpointUrl.AbsoluteUri;
+        }
+
+        var hasRequestedPath =
+            !string.IsNullOrEmpty(requestedEndpointUrl.AbsolutePath) &&
+            !string.Equals(requestedEndpointUrl.AbsolutePath, "/", StringComparison.Ordinal);
+        var hasRequestedQuery = !string.IsNullOrEmpty(requestedEndpointUrl.Query);
+        var authorityDiffers = !UrisShareAuthority(requestedEndpointUrl, discoveredEndpointUri);
+
+        if (!authorityDiffers && !hasRequestedPath && !hasRequestedQuery)
+        {
+            return discoveredEndpointUri.AbsoluteUri;
+        }
+
+        var builder = new UriBuilder(discoveredEndpointUri);
+
+        if (authorityDiffers)
+        {
+            builder.Scheme = requestedEndpointUrl.Scheme;
+            builder.Host = requestedEndpointUrl.Host;
+            builder.Port = requestedEndpointUrl.Port;
+        }
+
+        if (hasRequestedPath)
+        {
+            builder.Path = requestedEndpointUrl.AbsolutePath;
+        }
+
+        if (hasRequestedQuery)
+        {
+            builder.Query = requestedEndpointUrl.Query.TrimStart('?');
+        }
+
+        return builder.Uri.AbsoluteUri;
+    }
+
+    private static bool UrisShareAuthority(Uri requestedEndpointUrl, Uri discoveredEndpointUri)
+    {
+        return string.Equals(requestedEndpointUrl.Scheme, discoveredEndpointUri.Scheme, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(requestedEndpointUrl.Host, discoveredEndpointUri.Host, StringComparison.OrdinalIgnoreCase) &&
+               requestedEndpointUrl.Port == discoveredEndpointUri.Port;
+    }
+
+    private UserIdentity CreateUserIdentity()
+    {
+        return _authMode switch
+        {
+            AuthenticationMode.Anonymous => new UserIdentity(),
+            AuthenticationMode.UserName => new UserIdentity(_username, System.Text.Encoding.UTF8.GetBytes(_password ?? string.Empty)),
+            AuthenticationMode.Certificate => _clientCertificate != null
+                ? new UserIdentity(_clientCertificate)
+                : throw new InvalidOperationException("Certificate is required for certificate authentication."),
+            _ => new UserIdentity()
+        };
+    }
+
+    private static bool IsTransientError(Exception ex)
+    {
+        if (ex is ServiceResultException sre)
+        {
+            var code = sre.StatusCode;
+            return code == StatusCodes.BadServerNotConnected ||
+                   code == StatusCodes.BadConnectionClosed ||
+                   code == StatusCodes.BadCommunicationError ||
+                   code == StatusCodes.BadTimeout ||
+                   code == StatusCodes.BadRequestTimeout ||
+                   code == StatusCodes.BadSecureChannelClosed ||
+                   code == StatusCodes.BadTcpServerTooBusy;
+        }
+
+        return ex is TimeoutException ||
+               ex is System.Net.Sockets.SocketException ||
+               ex is System.IO.IOException;
+    }
+}
+
+/// <summary>
+/// Exception thrown when OPC UA connection fails.
+/// </summary>
+public class OpcUaConnectionException : Exception
+{
+    public OpcUaConnectionException(string message) : base(message) { }
+    public OpcUaConnectionException(string message, Exception? innerException) : base(message, innerException) { }
+}
+

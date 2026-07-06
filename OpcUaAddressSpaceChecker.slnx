@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpcUaAddressSpaceChecker/OpcUaAddressSpaceChecker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpcUaAddressSpaceChecker.AppHost/OpcUaAddressSpaceChecker.AppHost.csproj" />
+    <Project Path="tests/OpcUaAddressSpaceChecker.Tests/OpcUaAddressSpaceChecker.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- .NET Tool Configuration -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>opcua-check-address-space</ToolCommandName>
+    <PackageOutputPath>./nupkg</PackageOutputPath>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>OpcUaAddressSpaceChecker</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Alexander Köpke</Authors>
+    <Description>A .NET global tool that connects to an OPC UA server and validates its address space against NodeSet2 type models.</Description>
+    <PackageTags>opcua;opc-ua;nodeset2;validation;address-space;industrial;iot;automation</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/koepalex/OpcUaAddressSpaceChecker</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- OPC UA Stack -->
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.152" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" Version="1.5.378.152" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Core" Version="1.5.378.152" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Security.Certificates" Version="1.5.378.152" />
+
+    <!-- CLI -->
+    <PackageReference Include="System.CommandLine" Version="2.0.8" />
+
+    <!-- Logging -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpcUaAddressSpaceChecker.Tests" />
+  </ItemGroup>
+
+</Project>
