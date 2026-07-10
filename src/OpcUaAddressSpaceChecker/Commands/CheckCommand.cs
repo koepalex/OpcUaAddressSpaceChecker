@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Opc.Ua;
 using OpcUaAddressSpaceChecker.Configuration;
@@ -110,6 +111,13 @@ public class CheckCommand : RootCommand
             DefaultValueFactory = (_) => []
         };
 
+        var configOption = new Option<string?>(
+            name: "--config")
+        {
+            Description = "Optional path to an appsettings.json config file (suppressed BrowsePaths and per-rule enable/severity). When omitted, appsettings.json is searched in the working directory and next to the tool; built-in defaults apply if none is found.",
+            DefaultValueFactory = (_) => EnvironmentVariables.GetValue(EnvironmentVariables.ConfigPath)
+        };
+
         var outputFormatOption = new Option<string>(
             name: "--output-format")
         {
@@ -187,6 +195,7 @@ public class CheckCommand : RootCommand
         Options.Add(certificateFromStdinOption);
         Options.Add(nodesetOption);
         Options.Add(nodesetDirOption);
+        Options.Add(configOption);
         Options.Add(outputFormatOption);
         Options.Add(outputOption);
         Options.Add(severityThresholdOption);
@@ -211,6 +220,7 @@ public class CheckCommand : RootCommand
             var certificateFromStdin = parseResult.GetValue(certificateFromStdinOption);
             var nodesets = parseResult.GetValue(nodesetOption) ?? [];
             var nodesetDirs = parseResult.GetValue(nodesetDirOption) ?? [];
+            var configPath = parseResult.GetValue(configOption);
             var outputFormat = parseResult.GetValue(outputFormatOption)!;
             var output = parseResult.GetValue(outputOption);
             var severityThreshold = parseResult.GetValue(severityThresholdOption)!;
@@ -234,6 +244,7 @@ public class CheckCommand : RootCommand
                 certificateFromStdin,
                 nodesets,
                 nodesetDirs,
+                configPath,
                 outputFormat,
                 output,
                 severityThreshold,
@@ -260,6 +271,7 @@ public class CheckCommand : RootCommand
         bool certificateFromStdin,
         string[] nodesets,
         string[] nodesetDirs,
+        string? configPath,
         string outputFormat,
         string? output,
         string severityThreshold,
@@ -348,6 +360,7 @@ public class CheckCommand : RootCommand
                 SeverityThreshold = severityThreshold,
                 IncludeRuleIds = ruleIds,
                 ExcludeRuleIds = excludeRules,
+                ConfigPath = configPath,
                 RetryCount = retryCount,
                 RetryDelaySeconds = retryDelay,
                 Verbose = verbose,
@@ -385,6 +398,25 @@ public class CheckCommand : RootCommand
             }
 
             var severityThresholdValue = ParseSeverity(severityThreshold);
+
+            // Load user configuration (suppressed BrowsePaths + per-rule enable/severity). Missing
+            // file => built-in defaults; an explicit --config that is missing or malformed fails fast.
+            CheckerConfig config;
+            try
+            {
+                var resolvedConfigPath = CheckerConfigLoader.ResolveConfigPath(options.ConfigPath);
+                config = CheckerConfigLoader.Load(resolvedConfigPath);
+                logger.LogInformation(
+                    "Configuration: {Source} ({Suppressed} suppressed path(s), {Overrides} rule override(s)).",
+                    resolvedConfigPath ?? "built-in defaults",
+                    config.SuppressedBrowsePaths.Count,
+                    config.Rules.Count);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or JsonException)
+            {
+                logger.LogError(ex, "Failed to load configuration file.");
+                return 10;
+            }
 
             // Connect to the live server.
             logger.LogInformation("Connecting to OPC UA server...");
@@ -441,16 +473,31 @@ public class CheckCommand : RootCommand
             var browser = new AddressSpaceBrowser(loggerFactory.CreateLogger<AddressSpaceBrowser>(), client);
             var snapshot = await browser.FetchAllNodesAsync(cancellationToken).ConfigureAwait(false);
 
-            // Auto-discover and run validation rules.
-            var registry = new RuleRegistry(options.IncludeRuleIds, options.ExcludeRuleIds);
+            // Auto-discover and run validation rules. Config-disabled rules are excluded alongside
+            // any --exclude-rule values.
+            var excludedRuleIds = options.ExcludeRuleIds.Concat(config.GetDisabledRuleIds()).ToArray();
+            var registry = new RuleRegistry(options.IncludeRuleIds, excludedRuleIds);
             registry.AutoDiscover(typeof(CheckCommand).Assembly);
-            logger.LogInformation("Registered {Count} validation rule(s).", registry.Rules.Count);
+            logger.LogInformation(
+                "Registered {Count} validation rule(s){Excluded}.",
+                registry.Rules.Count,
+                excludedRuleIds.Length > 0 ? $" ({excludedRuleIds.Length} excluded: {string.Join(", ", excludedRuleIds)})" : string.Empty);
 
             var engine = new ValidationEngine(registry, typeModel, loggerFactory.CreateLogger<ValidationEngine>());
             var report = await engine.RunAsync(snapshot.Nodes, client.Session, cancellationToken).ConfigureAwait(false);
 
+            // Apply configured per-rule severity overrides and BrowsePath suppression before the
+            // severity threshold is applied.
+            var configFiltered = FindingFilter.Apply(report.Findings, snapshot.BrowsePathsByNodeId, config);
+            if (configFiltered.SuppressedCount > 0)
+            {
+                logger.LogInformation(
+                    "Suppressed {Count} finding(s) via configured BrowsePath filters.",
+                    configFiltered.SuppressedCount);
+            }
+
             // Apply the severity threshold to the reported findings.
-            var filteredFindings = report.Findings
+            var filteredFindings = configFiltered.Findings
                 .Where(finding => finding.Severity >= severityThresholdValue)
                 .ToList();
             var outputReport = new ValidationReport(report.TotalNodes, filteredFindings.Count, filteredFindings);
@@ -502,9 +549,9 @@ public class CheckCommand : RootCommand
                 report.TotalNodes,
                 outputReport.TotalFindings,
                 severityThreshold,
-                report.ErrorCount,
-                report.WarningCount,
-                report.InformationCount);
+                outputReport.ErrorCount,
+                outputReport.WarningCount,
+                outputReport.InformationCount);
 
             return outputReport.TotalFindings > 0 ? 1 : 0;
         }

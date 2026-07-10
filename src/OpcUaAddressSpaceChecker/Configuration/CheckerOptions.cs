@@ -42,4 +42,11 @@ public class CheckerOptions : OpcUaClientOptions
     /// Rule IDs to exclude from the run.
     /// </summary>
     public string[] ExcludeRuleIds { get; set; } = [];
+
+    /// <summary>
+    /// Optional path to the appsettings.json config file (suppressed BrowsePaths and per-rule
+    /// enable/severity overrides). When null, the file is auto-discovered; built-in defaults apply
+    /// when no file is found.
+    /// </summary>
+    public string? ConfigPath { get; set; }
 }

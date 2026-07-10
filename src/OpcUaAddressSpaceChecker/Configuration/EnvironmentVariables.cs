@@ -44,6 +44,12 @@ public static class EnvironmentVariables
     public const string LogFile = "OPCUA_LOG_FILE";
 
     /// <summary>
+    /// Environment variable for the path to the appsettings.json config file
+    /// (suppressed BrowsePaths and per-rule enable/severity overrides).
+    /// </summary>
+    public const string ConfigPath = "OPCUA_CONFIG_PATH";
+
+    /// <summary>
     /// Gets the value of an environment variable, returning null if not set or empty.
     /// </summary>
     /// <param name="variableName">The name of the environment variable.</param>
