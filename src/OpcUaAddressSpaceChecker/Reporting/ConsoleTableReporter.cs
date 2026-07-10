@@ -11,6 +11,17 @@ public sealed class ConsoleTableReporter : IReporter
         Severity.Information
     ];
 
+    private readonly NodeIdDisplayFormatter? _nodeIdFormatter;
+
+    /// <summary>
+    /// Creates a console reporter. When a <paramref name="nodeIdFormatter"/> is supplied the NodeId
+    /// column is rendered as <c>ns:BrowseName (ExpandedNodeId)</c>; otherwise the bare NodeId is shown.
+    /// </summary>
+    public ConsoleTableReporter(NodeIdDisplayFormatter? nodeIdFormatter = null)
+    {
+        _nodeIdFormatter = nodeIdFormatter;
+    }
+
     public void Report(ValidationReport report, TextWriter writer)
     {
         ArgumentNullException.ThrowIfNull(report);
@@ -42,7 +53,7 @@ public sealed class ConsoleTableReporter : IReporter
         }
     }
 
-    private static void WriteTable(IReadOnlyCollection<ValidationFinding> findings, TextWriter writer)
+    private void WriteTable(IReadOnlyCollection<ValidationFinding> findings, TextWriter writer)
     {
         var rows = findings
             .Select(finding => new[]
@@ -87,8 +98,8 @@ public sealed class ConsoleTableReporter : IReporter
     private static string FormatSeverity(Severity severity) =>
         severity.ToString().ToUpperInvariant();
 
-    private static string FormatNodeId(Opc.Ua.NodeId nodeId) =>
-        nodeId.ToString();
+    private string FormatNodeId(Opc.Ua.NodeId nodeId) =>
+        _nodeIdFormatter?.Format(nodeId) ?? nodeId.ToString();
 
     private static string Clean(string value) =>
         value.Replace('\r', ' ').Replace('\n', ' ');

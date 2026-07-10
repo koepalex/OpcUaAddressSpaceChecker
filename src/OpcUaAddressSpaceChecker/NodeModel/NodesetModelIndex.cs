@@ -59,6 +59,22 @@ public sealed class NodesetModelIndex
     public bool TryGetNode(NodeId nodeId, out NodeState? node) =>
         _nodesById.TryGetValue(nodeId, out node);
 
+    /// <summary>
+    /// Resolves the NodeSet2 <c>Documentation</c> element (an OPC Foundation online reference URL)
+    /// captured on import for a node, when present and non-blank.
+    /// </summary>
+    public bool TryGetDocumentation(NodeId nodeId, out string? documentation)
+    {
+        documentation = null;
+        if (_nodesById.TryGetValue(nodeId, out var node) && !string.IsNullOrWhiteSpace(node.NodeSetDocumentation))
+        {
+            documentation = node.NodeSetDocumentation;
+            return true;
+        }
+
+        return false;
+    }
+
     public bool TryGetType(NodeId typeId, out NodeState? typeNode) =>
         _typesById.TryGetValue(typeId, out typeNode);
 

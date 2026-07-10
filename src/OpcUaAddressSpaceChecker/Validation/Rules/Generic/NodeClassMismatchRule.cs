@@ -15,9 +15,11 @@ public sealed class NodeClassMismatchRule : IValidationRule
 
     public IEnumerable<ValidationFinding> Validate(LiveNode node, NodeState? typeDefinition, ValidationContext context)
     {
+        var declarations = context.GetInstanceDeclarations(node);
         foreach (var declaration in GenericRuleHelpers.ConcreteDeclarations(context, node))
         {
-            foreach (var match in GenericRuleHelpers.FindChildrenByBrowsePath(node, declaration.BrowsePath))
+            var declaringRef = GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations);
+            foreach (var match in GenericRuleHelpers.FindChildrenByBrowsePath(context, node, declarations, declaration.BrowsePath))
             {
                 if (match.Child.NodeClass == declaration.NodeClass)
                 {
@@ -30,7 +32,9 @@ public sealed class NodeClassMismatchRule : IValidationRule
                     match.Child.NodeId,
                     GenericRuleHelpers.FormatBrowsePath(declaration.BrowsePath),
                     "Child NodeClass does not match its InstanceDeclaration.",
-                    $"Expected {declaration.NodeClass}; actual {match.Child.NodeClass}.");
+                    $"Expected {declaration.NodeClass}; actual {match.Child.NodeClass}.",
+                    declaringRef.NamespaceUri,
+                    declaringRef.ReferenceUrl);
             }
         }
     }

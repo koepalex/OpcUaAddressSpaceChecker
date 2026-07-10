@@ -15,11 +15,12 @@ public sealed class BrowseNameNamespaceConformanceRule : IValidationRule
 
     public IEnumerable<ValidationFinding> Validate(LiveNode node, NodeState? typeDefinition, ValidationContext context)
     {
+        var declarations = context.GetInstanceDeclarations(node);
         foreach (var declaration in GenericRuleHelpers.ConcreteDeclarations(context, node))
         {
             IReadOnlyList<LiveNode> parentNodes = declaration.BrowsePath.Count == 1
                 ? [node]
-                : GenericRuleHelpers.ResolveParentLinks(node, declaration.BrowsePath).Select(link => link.Child).ToArray();
+                : GenericRuleHelpers.ResolveParentLinks(context, node, declarations, declaration.BrowsePath).Select(link => link.Child).ToArray();
 
             foreach (var parent in parentNodes)
             {

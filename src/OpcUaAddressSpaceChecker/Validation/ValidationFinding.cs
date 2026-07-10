@@ -8,4 +8,6 @@ public sealed record ValidationFinding(
     NodeId NodeId,
     string BrowsePath,
     string Message,
-    string? Details = null);
+    string? Details = null,
+    string? DeclaringTypeNamespaceUri = null,
+    string? DeclaringTypeReferenceUrl = null);

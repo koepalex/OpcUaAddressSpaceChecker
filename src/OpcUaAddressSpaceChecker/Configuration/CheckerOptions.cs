@@ -14,12 +14,12 @@ public class CheckerOptions : OpcUaClientOptions
     public string[] NodesetPaths { get; set; } = [];
 
     /// <summary>
-    /// Directories searched for companion specification NodeSet2 XML files.
+    /// Directories searched for companion specification NodeSet2 XML files when NodeSet2 overrides are supplied.
     /// </summary>
-    public string[] NodesetSearchDirs { get; set; } = [@"C:\ode\UA-Nodeset"];
+    public string[] NodesetSearchDirs { get; set; } = [];
 
     /// <summary>
-    /// Output format: console, json, or sarif.
+    /// Output format: console, json, sarif, or markdown.
     /// </summary>
     public string OutputFormat { get; set; } = "console";
 

@@ -26,9 +26,10 @@ public sealed class AddressSpaceBrowser
     }
 
     /// <summary>
-    /// Fetches all live instance nodes reachable from the OPC UA Objects folder.
+    /// Fetches all live instance nodes reachable from the OPC UA Objects folder together with a
+    /// concrete absolute BrowsePath per node (see <see cref="AddressSpaceSnapshot"/>).
     /// </summary>
-    public async Task<IReadOnlyCollection<LiveNode>> FetchAllNodesAsync(CancellationToken cancellationToken = default)
+    public async Task<AddressSpaceSnapshot> FetchAllNodesAsync(CancellationToken cancellationToken = default)
     {
         return await _client.ExecuteWithRetryAsync(async (session, ct) =>
         {
@@ -96,11 +97,15 @@ public sealed class AddressSpaceBrowser
                 ct).ConfigureAwait(false);
 
             var nodes = MaterializeNodes(discovered, relationships, attributes);
+            var browsePaths = BuildBrowsePaths(
+                nodes,
+                relationships.Select(relationship => (relationship.SourceId, relationship.TargetId)).ToArray(),
+                rootNodeId);
 
             stopwatch.Stop();
             _logger.LogInformation("Fetched {Count} live nodes in {Duration}ms.", nodes.Count, stopwatch.ElapsedMilliseconds);
 
-            return (IReadOnlyCollection<LiveNode>)nodes;
+            return new AddressSpaceSnapshot(nodes, browsePaths);
         }, "FetchAllNodes", cancellationToken).ConfigureAwait(false);
     }
 
@@ -389,6 +394,78 @@ public sealed class AddressSpaceBrowser
                 break;
         }
     }
+
+    /// <summary>
+    /// Builds a concrete absolute BrowsePath (formatted as <c>namespaceIndex:BrowseName</c>
+    /// segments joined by <c>/</c>) for every discovered node by walking its first-discovered
+    /// (shortest-path) hierarchical parent chain up to, but excluding, the Objects root. Because the
+    /// path is built from concrete BrowseNames, placeholder InstanceDeclaration segments (e.g.
+    /// <c>0:&lt;OrderedObject&gt;</c>) are naturally replaced by the fulfilling instance names.
+    /// </summary>
+    internal static IReadOnlyDictionary<NodeId, string> BuildBrowsePaths(
+        IReadOnlyList<LiveNode> nodes,
+        IReadOnlyCollection<(NodeId SourceId, NodeId TargetId)> edges,
+        NodeId rootNodeId)
+    {
+        var nodesById = nodes.ToDictionary(node => node.NodeId);
+
+        var parentById = new Dictionary<NodeId, NodeId>();
+        foreach (var edge in edges)
+        {
+            if (NodeId.IsNull(edge.TargetId) ||
+                edge.TargetId == rootNodeId ||
+                edge.SourceId == edge.TargetId)
+            {
+                continue;
+            }
+
+            // First occurrence wins: edges are appended in breadth-first order, so the first parent
+            // seen for a target is on a shortest path from the root.
+            parentById.TryAdd(edge.TargetId, edge.SourceId);
+        }
+
+        var pathsById = new Dictionary<NodeId, string>();
+        foreach (var node in nodes)
+        {
+            if (node.NodeId == rootNodeId)
+            {
+                continue;
+            }
+
+            var segments = new List<string>();
+            var visited = new HashSet<NodeId>();
+            var current = node.NodeId;
+            while (current is not null && current != rootNodeId && visited.Add(current))
+            {
+                if (!nodesById.TryGetValue(current, out var currentNode))
+                {
+                    break;
+                }
+
+                segments.Add(FormatSegment(currentNode));
+
+                if (!parentById.TryGetValue(current, out var parent))
+                {
+                    break;
+                }
+
+                current = parent;
+            }
+
+            if (segments.Count > 0)
+            {
+                segments.Reverse();
+                pathsById[node.NodeId] = string.Join("/", segments);
+            }
+        }
+
+        return pathsById;
+    }
+
+    private static string FormatSegment(LiveNode node) =>
+        string.IsNullOrEmpty(node.BrowseName.Name)
+            ? node.NodeId.ToString()
+            : $"{node.BrowseName.NamespaceIndex}:{node.BrowseName.Name}";
 
     private static List<LiveNode> MaterializeNodes(
         IReadOnlyDictionary<NodeId, DiscoveredNode> discovered,

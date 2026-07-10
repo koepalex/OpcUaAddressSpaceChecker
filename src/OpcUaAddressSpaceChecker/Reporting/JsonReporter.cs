@@ -10,6 +10,18 @@ public sealed class JsonReporter : IReporter
         WriteIndented = true
     };
 
+    private readonly NodeIdDisplayFormatter? _nodeIdFormatter;
+
+    /// <summary>
+    /// Creates a JSON reporter. When a <paramref name="nodeIdFormatter"/> is supplied a readable
+    /// <c>browseName</c> field (e.g. <c>5:ProductionPrograms</c>) is emitted alongside the raw
+    /// <c>nodeId</c>, keeping the output machine-parseable while easier to read.
+    /// </summary>
+    public JsonReporter(NodeIdDisplayFormatter? nodeIdFormatter = null)
+    {
+        _nodeIdFormatter = nodeIdFormatter;
+    }
+
     public void Report(ValidationReport report, TextWriter writer)
     {
         ArgumentNullException.ThrowIfNull(report);
@@ -33,9 +45,13 @@ public sealed class JsonReporter : IReporter
                 ruleId = finding.RuleId,
                 severity = FormatSeverity(finding.Severity),
                 nodeId = FormatNodeId(finding.NodeId),
+                browseName = _nodeIdFormatter?.TryGetBrowseName(finding.NodeId),
                 browsePath = finding.BrowsePath,
                 message = finding.Message,
-                details = finding.Details
+                details = finding.Details,
+                referenceUrl = FindingReferenceResolver.Resolve(finding),
+                declaringTypeNamespaceUri = finding.DeclaringTypeNamespaceUri,
+                declaringTypeReferenceUrl = finding.DeclaringTypeReferenceUrl
             })
         };
 

@@ -40,7 +40,7 @@ public sealed class PumpConfigurationNestingRule : IValidationRule
                     configurationLink.Child.NodeId,
                     $"{CompanionSpecRuleHelpers.FormatNode(node)}/{ConfigurationName}",
                     "Pump Configuration object does not use ConfigurationGroupType as its TypeDefinition.",
-                    $"Actual TypeDefinition: {CompanionSpecRuleHelpers.FormatNodeId(configurationLink.Child.TypeDefinitionId)}; expected http://opcfoundation.org/UA/Pumps/#ConfigurationGroupType.");
+                    $"Actual TypeDefinition: {CompanionSpecRuleHelpers.FormatNode(context, configurationLink.Child.TypeDefinitionId)}; expected http://opcfoundation.org/UA/Pumps/#ConfigurationGroupType.");
             }
         }
     }

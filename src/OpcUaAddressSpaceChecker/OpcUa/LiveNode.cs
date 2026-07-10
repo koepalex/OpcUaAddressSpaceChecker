@@ -28,3 +28,12 @@ public sealed record LiveReference(
     QualifiedName BrowseName,
     LocalizedText DisplayName,
     NodeClass NodeClass);
+
+/// <summary>
+/// Result of browsing a live address space: the materialized nodes plus a concrete absolute
+/// BrowsePath per node (index -> <c>namespaceIndex:BrowseName</c> path from the Objects root),
+/// used by reporters to show where a finding actually lives in the address space.
+/// </summary>
+public sealed record AddressSpaceSnapshot(
+    IReadOnlyCollection<LiveNode> Nodes,
+    IReadOnlyDictionary<NodeId, string> BrowsePathsByNodeId);

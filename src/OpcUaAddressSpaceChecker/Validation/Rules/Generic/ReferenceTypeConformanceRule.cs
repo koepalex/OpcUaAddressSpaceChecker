@@ -23,13 +23,13 @@ public sealed class ReferenceTypeConformanceRule : IValidationRule
             if (isProperty &&
                 !GenericRuleHelpers.IsReferenceTypeCompatible(context, child.Reference.ReferenceTypeId, GenericRuleHelpers.HasProperty))
             {
-                yield return CreateFinding(child, "Property variable is not referenced with HasProperty.", GenericRuleHelpers.HasProperty);
+                yield return CreateFinding(context, child, "Property variable is not referenced with HasProperty.", GenericRuleHelpers.HasProperty);
             }
 
             if (isDataVariable &&
                 !GenericRuleHelpers.IsReferenceTypeCompatible(context, child.Reference.ReferenceTypeId, GenericRuleHelpers.HasComponent))
             {
-                yield return CreateFinding(child, "DataVariable is not referenced with HasComponent.", GenericRuleHelpers.HasComponent);
+                yield return CreateFinding(context, child, "DataVariable is not referenced with HasComponent.", GenericRuleHelpers.HasComponent);
             }
 
             if (isProperty && GenericRuleHelpers.GetChildLinks(child.Child).Any(grandchild =>
@@ -53,7 +53,9 @@ public sealed class ReferenceTypeConformanceRule : IValidationRule
                 continue;
             }
 
-            foreach (var match in GenericRuleHelpers.FindChildrenByBrowsePath(node, declaration.BrowsePath))
+            var declarations = context.GetInstanceDeclarations(node);
+            var declaringRef = GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations);
+            foreach (var match in GenericRuleHelpers.FindChildrenByBrowsePath(context, node, declarations, declaration.BrowsePath))
             {
                 if (GenericRuleHelpers.IsReferenceTypeCompatible(context, match.Reference.ReferenceTypeId, declaration.ReferenceTypeId))
                 {
@@ -66,17 +68,19 @@ public sealed class ReferenceTypeConformanceRule : IValidationRule
                     match.Child.NodeId,
                     GenericRuleHelpers.FormatBrowsePath(declaration.BrowsePath),
                     "Child reference type does not match its InstanceDeclaration.",
-                    $"Expected {GenericRuleHelpers.FormatNodeId(declaration.ReferenceTypeId)} or a subtype; actual {GenericRuleHelpers.FormatNodeId(match.Reference.ReferenceTypeId)}.");
+                    $"Expected {GenericRuleHelpers.FormatNode(context, declaration.ReferenceTypeId)} or a subtype; actual {GenericRuleHelpers.FormatNode(context, match.Reference.ReferenceTypeId)}.",
+                    declaringRef.NamespaceUri,
+                    declaringRef.ReferenceUrl);
             }
         }
     }
 
-    private ValidationFinding CreateFinding(GenericRuleHelpers.ChildLink child, string message, NodeId expectedReferenceTypeId) =>
+    private ValidationFinding CreateFinding(ValidationContext context, GenericRuleHelpers.ChildLink child, string message, NodeId expectedReferenceTypeId) =>
         new(
             RuleId,
             Severity,
             child.Child.NodeId,
             GenericRuleHelpers.FormatBrowseName(child.Child.BrowseName),
             message,
-            $"Expected {GenericRuleHelpers.FormatNodeId(expectedReferenceTypeId)} or a subtype; actual {GenericRuleHelpers.FormatNodeId(child.Reference.ReferenceTypeId)}.");
+            $"Expected {GenericRuleHelpers.FormatNode(context, expectedReferenceTypeId)} or a subtype; actual {GenericRuleHelpers.FormatNode(context, child.Reference.ReferenceTypeId)}.");
 }

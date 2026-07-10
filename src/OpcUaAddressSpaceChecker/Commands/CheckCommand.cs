@@ -15,7 +15,7 @@ namespace OpcUaAddressSpaceChecker.Commands;
 /// </summary>
 public class CheckCommand : RootCommand
 {
-    private static readonly string[] OutputFormats = ["console", "json", "sarif"];
+    private static readonly string[] OutputFormats = ["console", "json", "sarif", "markdown"];
     private static readonly string[] SeverityThresholds = ["information", "warning", "error"];
 
     public CheckCommand() : base("Checks an OPC UA server address space against NodeSet2 type models.")
@@ -99,21 +99,21 @@ public class CheckCommand : RootCommand
         var nodesetOption = new Option<string[]>(
             name: "--nodeset")
         {
-            Description = "Path to a NodeSet2 XML file to load. May be specified multiple times.",
+            Description = "Optional NodeSet2 XML file to load as a type-model override instead of the live server types. May be specified multiple times.",
             DefaultValueFactory = (_) => []
         };
 
         var nodesetDirOption = new Option<string[]>(
             name: "--nodeset-dir")
         {
-            Description = @"Directory searched for companion NodeSet2 XML files. May be specified multiple times.",
-            DefaultValueFactory = (_) => [@"C:\ode\UA-Nodeset"]
+            Description = "Optional directory searched for companion NodeSet2 XML files when --nodeset is supplied. May be specified multiple times.",
+            DefaultValueFactory = (_) => []
         };
 
         var outputFormatOption = new Option<string>(
             name: "--output-format")
         {
-            Description = "Output format: console, json, sarif",
+            Description = "Output format: console, json, sarif, markdown",
             DefaultValueFactory = (_) => "console"
         };
 
@@ -210,7 +210,7 @@ public class CheckCommand : RootCommand
             var certificatePassword = parseResult.GetValue(certificatePasswordOption);
             var certificateFromStdin = parseResult.GetValue(certificateFromStdinOption);
             var nodesets = parseResult.GetValue(nodesetOption) ?? [];
-            var nodesetDirs = parseResult.GetValue(nodesetDirOption) ?? [@"C:\ode\UA-Nodeset"];
+            var nodesetDirs = parseResult.GetValue(nodesetDirOption) ?? [];
             var outputFormat = parseResult.GetValue(outputFormatOption)!;
             var output = parseResult.GetValue(outputOption);
             var severityThreshold = parseResult.GetValue(severityThresholdOption)!;
@@ -288,7 +288,7 @@ public class CheckCommand : RootCommand
         {
             if (!IsOneOf(outputFormat, OutputFormats))
             {
-                logger.LogError("Invalid output format: {OutputFormat}. Valid values: console, json, sarif", outputFormat);
+                logger.LogError("Invalid output format: {OutputFormat}. Valid values: console, json, sarif, markdown", outputFormat);
                 return 10;
             }
 
@@ -342,7 +342,7 @@ public class CheckCommand : RootCommand
                 CertificatePassword = certificatePassword,
                 Certificate = certificate,
                 NodesetPaths = nodesets,
-                NodesetSearchDirs = nodesetDirs.Length == 0 ? [@"C:\ode\UA-Nodeset"] : nodesetDirs,
+                NodesetSearchDirs = nodesetDirs,
                 OutputFormat = outputFormat,
                 OutputPath = output,
                 SeverityThreshold = severityThreshold,
@@ -367,10 +367,14 @@ public class CheckCommand : RootCommand
                 return 10;
             }
 
+            var useNodesetOverride = options.NodesetPaths.Length > 0;
+
             logger.LogInformation("OPC UA Address Space Checker");
             logger.LogInformation("============================");
             logger.LogInformation("Endpoint: {Endpoint}", string.IsNullOrWhiteSpace(options.Endpoint) ? "(not provided)" : options.Endpoint);
-            logger.LogInformation("Nodeset search dirs: {NodesetDirs}", string.Join(", ", options.NodesetSearchDirs));
+            logger.LogInformation(
+                "Type-model source: {Source}",
+                useNodesetOverride ? "NodeSet2 files (override)" : "live server Types folder (i=86)");
             logger.LogInformation("Output format: {OutputFormat}", options.OutputFormat);
             logger.LogInformation("Severity threshold: {SeverityThreshold}", options.SeverityThreshold);
 
@@ -382,31 +386,6 @@ public class CheckCommand : RootCommand
 
             var severityThresholdValue = ParseSeverity(severityThreshold);
 
-            // Load NodeSet2 type models (base + companion + custom) in dependency order.
-            NodesetModelIndex typeModel;
-            try
-            {
-                var loadOrder = new NodesetDependencyResolver()
-                    .ResolveLoadOrder(options.NodesetPaths, options.NodesetSearchDirs);
-                var loaded = new NodesetLoader().Load(loadOrder);
-                typeModel = new NodesetModelIndex(loaded);
-
-                logger.LogInformation(
-                    "Loaded {Count} NodeSet2 file(s): {Files}",
-                    loaded.LoadedPaths.Count,
-                    loaded.LoadedPaths.Count == 0 ? "(none)" : string.Join(", ", loaded.LoadedPaths.Select(Path.GetFileName)));
-
-                if (loaded.LoadedPaths.Count == 0)
-                {
-                    logger.LogWarning("No NodeSet2 models were loaded; supply --nodeset to enable type-based checks.");
-                }
-            }
-            catch (Exception ex) when (ex is NodesetDependencyNotFoundException or FileNotFoundException or InvalidDataException)
-            {
-                logger.LogError(ex, "Failed to load NodeSet2 type models.");
-                return 3;
-            }
-
             // Connect to the live server.
             logger.LogInformation("Connecting to OPC UA server...");
             await using var client = await OpcUaClientBuilder
@@ -417,9 +396,50 @@ public class CheckCommand : RootCommand
                 .ConfigureAwait(false);
             logger.LogInformation("Connected successfully!");
 
+            // Build the type model. By default it is read live from the server's Types folder (i=86);
+            // NodeSet2 files supplied via --nodeset act as an override for servers that omit companion types.
+            NodesetModelIndex typeModel;
+            try
+            {
+                if (useNodesetOverride)
+                {
+                    var loadOrder = new NodesetDependencyResolver()
+                        .ResolveLoadOrder(options.NodesetPaths, options.NodesetSearchDirs);
+                    var loaded = new NodesetLoader().Load(loadOrder);
+                    typeModel = new NodesetModelIndex(loaded);
+
+                    logger.LogInformation(
+                        "Loaded {Count} NodeSet2 file(s) as a type-model override: {Files}",
+                        loaded.LoadedPaths.Count,
+                        loaded.LoadedPaths.Count == 0 ? "(none)" : string.Join(", ", loaded.LoadedPaths.Select(Path.GetFileName)));
+
+                    if (loaded.LoadedPaths.Count == 0)
+                    {
+                        logger.LogWarning("No NodeSet2 models were loaded; type-based checks may be limited.");
+                    }
+                }
+                else
+                {
+                    var typeModelBrowser = new LiveTypeModelBrowser(
+                        loggerFactory.CreateLogger<LiveTypeModelBrowser>(), client);
+                    var liveTypeModel = await typeModelBrowser.FetchTypeModelAsync(cancellationToken).ConfigureAwait(false);
+                    typeModel = LiveNodesetModel.Build(liveTypeModel);
+
+                    logger.LogInformation(
+                        "Built live type model with {TypeCount} type(s) from {NodeCount} browsed node(s).",
+                        typeModel.TypesById.Count,
+                        liveTypeModel.Nodes.Count);
+                }
+            }
+            catch (Exception ex) when (ex is NodesetDependencyNotFoundException or FileNotFoundException or InvalidDataException)
+            {
+                logger.LogError(ex, "Failed to load NodeSet2 type models.");
+                return 3;
+            }
+
             // Browse the live address space into materialized LiveNodes.
             var browser = new AddressSpaceBrowser(loggerFactory.CreateLogger<AddressSpaceBrowser>(), client);
-            var liveNodes = await browser.FetchAllNodesAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = await browser.FetchAllNodesAsync(cancellationToken).ConfigureAwait(false);
 
             // Auto-discover and run validation rules.
             var registry = new RuleRegistry(options.IncludeRuleIds, options.ExcludeRuleIds);
@@ -427,7 +447,7 @@ public class CheckCommand : RootCommand
             logger.LogInformation("Registered {Count} validation rule(s).", registry.Rules.Count);
 
             var engine = new ValidationEngine(registry, typeModel, loggerFactory.CreateLogger<ValidationEngine>());
-            var report = await engine.RunAsync(liveNodes, client.Session, cancellationToken).ConfigureAwait(false);
+            var report = await engine.RunAsync(snapshot.Nodes, client.Session, cancellationToken).ConfigureAwait(false);
 
             // Apply the severity threshold to the reported findings.
             var filteredFindings = report.Findings
@@ -436,16 +456,32 @@ public class CheckCommand : RootCommand
             var outputReport = new ValidationReport(report.TotalNodes, filteredFindings.Count, filteredFindings);
 
             // Select the reporter and render the report to a file or stdout.
+            var namespaceSnapshot = BuildNamespaceSnapshot(client.Session.NamespaceUris);
+            var nodeIdFormatter = new NodeIdDisplayFormatter(
+                namespaceSnapshot,
+                BuildBrowseNameSnapshot(snapshot.Nodes));
             IReporter reporter = options.OutputFormat.ToLowerInvariant() switch
             {
-                "json" => new JsonReporter(),
-                "sarif" => new SarifReporter(),
-                _ => new ConsoleTableReporter()
+                "json" => new JsonReporter(nodeIdFormatter),
+                "sarif" => new SarifReporter(nodeIdFormatter),
+                "markdown" => new MarkdownReporter(
+                    namespaceSnapshot,
+                    snapshot.BrowsePathsByNodeId,
+                    nodeIdFormatter),
+                _ => new ConsoleTableReporter(nodeIdFormatter)
             };
 
             if (!string.IsNullOrWhiteSpace(options.OutputPath))
             {
-                var outputFullPath = Path.GetFullPath(options.OutputPath);
+                var requestedPath = Path.GetFullPath(options.OutputPath);
+                var outputFullPath = Path.GetFullPath(ApplyFormatExtension(options.OutputPath, options.OutputFormat));
+                if (!string.Equals(requestedPath, outputFullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogWarning(
+                        "Output extension changed to match format '{Format}': {Requested} -> {Actual}",
+                        options.OutputFormat, requestedPath, outputFullPath);
+                }
+
                 var outputDirectory = Path.GetDirectoryName(outputFullPath);
                 if (!string.IsNullOrEmpty(outputDirectory))
                 {
@@ -491,6 +527,46 @@ public class CheckCommand : RootCommand
 
     private static bool IsOneOf(string value, IReadOnlyCollection<string> allowedValues) =>
         allowedValues.Contains(value, StringComparer.OrdinalIgnoreCase);
+
+    private static string ApplyFormatExtension(string path, string format) => format.ToLowerInvariant() switch
+    {
+        "json" => Path.ChangeExtension(path, ".json"),
+        "sarif" => Path.ChangeExtension(path, ".sarif"),
+        "markdown" => Path.ChangeExtension(path, ".md"),
+        _ => path
+    };
+
+    private static IReadOnlyDictionary<ushort, string> BuildNamespaceSnapshot(NamespaceTable namespaceUris)
+    {
+        var snapshot = new Dictionary<ushort, string>();
+        for (ushort index = 0; index < namespaceUris.Count; index++)
+        {
+            snapshot[index] = namespaceUris.GetString(index);
+        }
+
+        return snapshot;
+    }
+
+    /// <summary>
+    /// Builds a NodeId -&gt; <c>namespaceIndex:BrowseName</c> snapshot from the browsed live nodes so
+    /// reporters can render the NodeId column with a readable BrowseName. Nodes without a BrowseName
+    /// are skipped (the reporter then falls back to the ExpandedNodeId/NodeId).
+    /// </summary>
+    private static IReadOnlyDictionary<NodeId, string> BuildBrowseNameSnapshot(IReadOnlyCollection<LiveNode> nodes)
+    {
+        var snapshot = new Dictionary<NodeId, string>();
+        foreach (var node in nodes)
+        {
+            if (node.NodeId is null || string.IsNullOrEmpty(node.BrowseName.Name))
+            {
+                continue;
+            }
+
+            snapshot[node.NodeId] = $"{node.BrowseName.NamespaceIndex}:{node.BrowseName.Name}";
+        }
+
+        return snapshot;
+    }
 
     private static Severity ParseSeverity(string threshold)
     {

@@ -18,14 +18,19 @@ public sealed class MandatoryPlaceholderRule : IValidationRule
         var declarations = context.GetInstanceDeclarations(node);
         foreach (var declaration in declarations.Where(GenericRuleHelpers.IsMandatoryPlaceholder))
         {
-            if (GenericRuleHelpers.IsSuppressedByMissingOptionalAncestor(node, declaration, declarations))
+            if (GenericRuleHelpers.IsSuppressedByMissingOptionalAncestor(context, node, declaration, declarations))
             {
                 continue;
             }
 
+            var declaringRef = GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations);
+            var declaringTypeId = GenericRuleHelpers.ResolveDeclaringTypeId(node, declaration, declarations);
+            var declaringType = GenericRuleHelpers.FormatType(context, declaringTypeId);
+            var placeholderName = GenericRuleHelpers.FormatBrowseName(declaration.BrowseName);
+
             IReadOnlyList<LiveNode> parentNodes = declaration.BrowsePath.Count == 1
                 ? [node]
-                : GenericRuleHelpers.ResolveParentLinks(node, declaration.BrowsePath).Select(link => link.Child).ToArray();
+                : GenericRuleHelpers.ResolveParentLinks(context, node, declarations, declaration.BrowsePath).Select(link => link.Child).ToArray();
 
             foreach (var parent in parentNodes)
             {
@@ -43,8 +48,12 @@ public sealed class MandatoryPlaceholderRule : IValidationRule
                     Severity,
                     parent.NodeId,
                     GenericRuleHelpers.FormatBrowsePath(declaration.BrowsePath),
-                    "MandatoryPlaceholder declaration has no matching child.",
-                    $"Expected at least one child with ReferenceType {GenericRuleHelpers.FormatNodeId(declaration.ReferenceTypeId)} and TypeDefinition {GenericRuleHelpers.FormatNodeId(declaration.TypeDefinitionId)} or subtypes.");
+                    $"MandatoryPlaceholder '{placeholderName}' has no matching child.",
+                    $"Declared by type {declaringType}. Expected at least one child with ReferenceType " +
+                    $"{GenericRuleHelpers.FormatNode(context, declaration.ReferenceTypeId)} and TypeDefinition " +
+                    $"{GenericRuleHelpers.FormatNode(context, declaration.TypeDefinitionId)} or subtypes.",
+                    declaringRef.NamespaceUri,
+                    declaringRef.ReferenceUrl);
             }
         }
     }

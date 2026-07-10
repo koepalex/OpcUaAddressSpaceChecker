@@ -412,7 +412,8 @@ internal static class CompanionSpecRuleHelpers
     internal static IReadOnlyList<ChildLink> FindByBrowsePath(
         LiveNode root,
         IReadOnlyList<QualifiedName> browsePath,
-        ValidationContext context)
+        ValidationContext context,
+        IReadOnlyList<InstanceDeclaration>? declarations = null)
     {
         if (browsePath.Count == 0)
         {
@@ -422,15 +423,30 @@ internal static class CompanionSpecRuleHelpers
         IReadOnlyList<LiveNode> currentParents = [root];
         IReadOnlyList<ChildLink> currentMatches = [];
 
-        foreach (var segment in browsePath)
+        for (var depth = 0; depth < browsePath.Count; depth++)
         {
+            var segment = browsePath[depth];
+            var prefix = browsePath.Take(depth + 1).ToArray();
+            var segmentDeclaration = declarations?.FirstOrDefault(declaration =>
+                Rules.Generic.GenericRuleHelpers.BrowsePathEquals(declaration.BrowsePath, prefix));
+            var placeholderSegment = segmentDeclaration != null && Rules.Generic.GenericRuleHelpers.IsPlaceholder(segmentDeclaration);
             var expectedUri = ResolveModelUri(context.TypeModel, new NodeId(0, segment.NamespaceIndex));
             var nextMatches = new List<ChildLink>();
 
             foreach (var parent in currentParents)
             {
-                nextMatches.AddRange(GetChildLinks(parent).Where(link =>
-                    BrowseNameMatches(link.Child.BrowseName, segment.Name, context, expectedUri)));
+                if (placeholderSegment)
+                {
+                    nextMatches.AddRange(GetChildLinks(parent).Where(link =>
+                        IsReferenceTypeCompatible(context, link.Reference.ReferenceTypeId, segmentDeclaration!.ReferenceTypeId) &&
+                        (NodeId.IsNull(segmentDeclaration.TypeDefinitionId) ||
+                         IsTypeCompatible(context, link.Child.TypeDefinitionId, segmentDeclaration.TypeDefinitionId!))));
+                }
+                else
+                {
+                    nextMatches.AddRange(GetChildLinks(parent).Where(link =>
+                        BrowseNameMatches(link.Child.BrowseName, segment.Name, context, expectedUri)));
+                }
             }
 
             currentMatches = nextMatches;
@@ -447,8 +463,9 @@ internal static class CompanionSpecRuleHelpers
     internal static bool BrowsePathExists(
         LiveNode root,
         IReadOnlyList<QualifiedName> browsePath,
-        ValidationContext context) =>
-        FindByBrowsePath(root, browsePath, context).Count > 0;
+        ValidationContext context,
+        IReadOnlyList<InstanceDeclaration>? declarations = null) =>
+        FindByBrowsePath(root, browsePath, context, declarations).Count > 0;
 
     internal static bool IsReferenceTypeCompatible(
         ValidationContext context,
@@ -485,6 +502,35 @@ internal static class CompanionSpecRuleHelpers
 
     internal static string FormatNode(LiveNode node) =>
         string.IsNullOrEmpty(node.BrowseName.Name) ? node.NodeId.ToString() : FormatBrowseName(node.BrowseName);
+
+    /// <summary>
+    /// Formats a model/live NodeId for finding details as "&lt;ns:BrowseName&gt; (&lt;ExpandedNodeId&gt;)"
+    /// when the node's BrowseName is known in the type model, otherwise its ExpandedNodeId, falling
+    /// back to the bare NodeId. Keeps numeric identifiers readable while retaining the precise id.
+    /// </summary>
+    internal static string FormatNode(ValidationContext context, NodeId? nodeId)
+    {
+        if (NodeId.IsNull(nodeId))
+        {
+            return "<null>";
+        }
+
+        var uri = context.TypeModel.NamespaceMap.TryGetValue(nodeId!.NamespaceIndex, out var namespaceUri)
+            ? namespaceUri
+            : string.Empty;
+        var expanded = string.IsNullOrWhiteSpace(uri)
+            ? nodeId.ToString()
+            : new ExpandedNodeId(nodeId, uri).ToString();
+
+        if (context.TypeModel.TryGetNode(nodeId, out var node) &&
+            node is not null &&
+            !QualifiedName.IsNull(node.BrowseName))
+        {
+            return $"{FormatBrowseName(node.BrowseName)} ({expanded})";
+        }
+
+        return expanded;
+    }
 
     internal static string FormatNodeId(NodeId? nodeId) =>
         NodeId.IsNull(nodeId) ? "<null>" : nodeId.ToString();

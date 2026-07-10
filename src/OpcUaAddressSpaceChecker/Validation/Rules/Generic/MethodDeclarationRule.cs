@@ -23,11 +23,11 @@ public sealed class MethodDeclarationRule : IValidationRule
 
         foreach (var declaration in methodDeclarations)
         {
-            var matches = GenericRuleHelpers.FindChildrenByBrowsePath(node, declaration.BrowsePath);
+            var matches = GenericRuleHelpers.FindChildrenByBrowsePath(context, node, declarations, declaration.BrowsePath);
             if (matches.Count == 0)
             {
                 if (GenericRuleHelpers.IsMandatory(declaration) &&
-                    !GenericRuleHelpers.IsSuppressedByMissingOptionalAncestor(node, declaration, declarations))
+                    !GenericRuleHelpers.IsSuppressedByMissingOptionalAncestor(context, node, declaration, declarations))
                 {
                     yield return new ValidationFinding(
                         RuleId,
@@ -35,7 +35,9 @@ public sealed class MethodDeclarationRule : IValidationRule
                         node.NodeId,
                         GenericRuleHelpers.FormatBrowsePath(declaration.BrowsePath),
                         "Mandatory Method declaration is missing.",
-                        $"Expected Method {GenericRuleHelpers.FormatBrowseName(declaration.BrowseName)}.");
+                        $"Expected Method {GenericRuleHelpers.FormatBrowseName(declaration.BrowseName)}.",
+                        GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations).NamespaceUri,
+                        GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations).ReferenceUrl);
                 }
 
                 continue;
@@ -43,11 +45,12 @@ public sealed class MethodDeclarationRule : IValidationRule
 
             foreach (var argumentDeclaration in GetArgumentDeclarations(declarations, declaration))
             {
-                if (GenericRuleHelpers.BrowsePathExists(node, argumentDeclaration.BrowsePath))
+                if (GenericRuleHelpers.BrowsePathExists(context, node, declarations, argumentDeclaration.BrowsePath))
                 {
                     continue;
                 }
 
+                var argumentRef = GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, argumentDeclaration, declarations);
                 foreach (var match in matches)
                 {
                     yield return new ValidationFinding(
@@ -56,7 +59,9 @@ public sealed class MethodDeclarationRule : IValidationRule
                         match.Child.NodeId,
                         GenericRuleHelpers.FormatBrowsePath(argumentDeclaration.BrowsePath),
                         "Method argument property declared by the type is missing on the instance method.",
-                        $"Expected {GenericRuleHelpers.FormatBrowseName(argumentDeclaration.BrowseName)}.");
+                        $"Expected {GenericRuleHelpers.FormatBrowseName(argumentDeclaration.BrowseName)}.",
+                        argumentRef.NamespaceUri,
+                        argumentRef.ReferenceUrl);
                 }
             }
         }

@@ -31,6 +31,14 @@ public sealed class ValidationContext
     public string ResolveNamespaceUri(ushort namespaceIndex) =>
         LiveSession.NamespaceUris.GetString(namespaceIndex) ?? string.Empty;
 
+    /// <summary>
+    /// Resolves the namespace URI for a namespace index in the loaded type model (as opposed to the
+    /// live session). InstanceDeclaration NodeIds are type-model NodeIds, so their declaring companion
+    /// specification is identified through the model namespace map, not the live namespace table.
+    /// </summary>
+    public string ResolveModelNamespaceUri(ushort namespaceIndex) =>
+        TypeModel.NamespaceMap.TryGetValue(namespaceIndex, out var uri) ? uri : string.Empty;
+
     public bool TryGetTypeDefinition(LiveNode node, out NodeState? typeDefinition)
     {
         ArgumentNullException.ThrowIfNull(node);

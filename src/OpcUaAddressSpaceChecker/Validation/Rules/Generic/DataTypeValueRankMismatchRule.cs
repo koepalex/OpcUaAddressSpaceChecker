@@ -16,6 +16,7 @@ public sealed class DataTypeValueRankMismatchRule : IValidationRule
 
     public IEnumerable<ValidationFinding> Validate(LiveNode node, NodeState? typeDefinition, ValidationContext context)
     {
+        var declarations = context.GetInstanceDeclarations(node);
         foreach (var declaration in GenericRuleHelpers.ConcreteDeclarations(context, node)
                      .Where(declaration => declaration.NodeClass == NodeClass.Variable))
         {
@@ -24,10 +25,11 @@ public sealed class DataTypeValueRankMismatchRule : IValidationRule
                 continue;
             }
 
-            foreach (var match in GenericRuleHelpers.FindChildrenByBrowsePath(node, declaration.BrowsePath)
+            var declaringRef = GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations);
+            foreach (var match in GenericRuleHelpers.FindChildrenByBrowsePath(context, node, declarations, declaration.BrowsePath)
                          .Where(match => match.Child.NodeClass == NodeClass.Variable))
             {
-                foreach (var finding in ValidateVariable(context, match.Child, declaration, declarationVariable))
+                foreach (var finding in ValidateVariable(match.Child, declaration, declarationVariable, context, declaringRef))
                 {
                     yield return finding;
                 }
@@ -36,10 +38,11 @@ public sealed class DataTypeValueRankMismatchRule : IValidationRule
     }
 
     private IEnumerable<ValidationFinding> ValidateVariable(
-        ValidationContext context,
         LiveNode child,
         InstanceDeclaration declaration,
-        BaseVariableState declarationVariable)
+        BaseVariableState declarationVariable,
+        ValidationContext context,
+        GenericRuleHelpers.DeclaringTypeReference declaringRef)
     {
         if (!NodeId.IsNull(declarationVariable.DataType) &&
             !GenericRuleHelpers.IsTypeCompatible(context, child.DataType, declarationVariable.DataType))
@@ -50,7 +53,9 @@ public sealed class DataTypeValueRankMismatchRule : IValidationRule
                 child.NodeId,
                 GenericRuleHelpers.FormatBrowsePath(declaration.BrowsePath),
                 "Variable DataType is not compatible with its InstanceDeclaration.",
-                $"Expected {GenericRuleHelpers.FormatNodeId(declarationVariable.DataType)} or a subtype; actual {GenericRuleHelpers.FormatNodeId(child.DataType)}.");
+                $"Expected {GenericRuleHelpers.FormatNode(context, declarationVariable.DataType)} or a subtype; actual {GenericRuleHelpers.FormatNode(context, child.DataType)}.",
+                declaringRef.NamespaceUri,
+                declaringRef.ReferenceUrl);
         }
 
         if (child.ValueRank is not int actualValueRank || !IsValueRankCompatible(actualValueRank, declarationVariable.ValueRank))
@@ -61,7 +66,9 @@ public sealed class DataTypeValueRankMismatchRule : IValidationRule
                 child.NodeId,
                 GenericRuleHelpers.FormatBrowsePath(declaration.BrowsePath),
                 "Variable ValueRank is not compatible with its InstanceDeclaration.",
-                $"Expected ValueRank {declarationVariable.ValueRank}; actual {(child.ValueRank.HasValue ? child.ValueRank.Value.ToString() : "<missing>")}.");
+                $"Expected ValueRank {declarationVariable.ValueRank}; actual {(child.ValueRank.HasValue ? child.ValueRank.Value.ToString() : "<missing>")}.",
+                declaringRef.NamespaceUri,
+                declaringRef.ReferenceUrl);
         }
 
         uint[] declaredDimensions = declarationVariable.ArrayDimensions?.ToArray() ?? [];
@@ -73,7 +80,9 @@ public sealed class DataTypeValueRankMismatchRule : IValidationRule
                 child.NodeId,
                 GenericRuleHelpers.FormatBrowsePath(declaration.BrowsePath),
                 "Variable ArrayDimensions are not compatible with its InstanceDeclaration.",
-                $"Expected [{string.Join(", ", declaredDimensions)}]; actual [{string.Join(", ", child.ArrayDimensions)}].");
+                $"Expected [{string.Join(", ", declaredDimensions)}]; actual [{string.Join(", ", child.ArrayDimensions)}].",
+                declaringRef.NamespaceUri,
+                declaringRef.ReferenceUrl);
         }
     }
 

@@ -32,6 +32,7 @@ public sealed class ValidationEngine
 
         var nodes = liveNodes as IReadOnlyCollection<LiveNode> ?? liveNodes.ToArray();
         var findings = new List<ValidationFinding>();
+        var seen = new HashSet<(string RuleId, string NodeId, Severity Severity, string Message, string? Details)>();
 
         foreach (var liveNode in nodes)
         {
@@ -44,7 +45,18 @@ public sealed class ValidationEngine
             foreach (var rule in _registry.GetApplicableRules(liveNode, typeDefinition, context))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                findings.AddRange(rule.Validate(liveNode, typeDefinition, context));
+                foreach (var finding in rule.Validate(liveNode, typeDefinition, context))
+                {
+                    // The same subject node can be reached through more than one traversal path
+                    // (e.g. a shared node referenced via multiple hierarchical references), which
+                    // would otherwise surface identical findings multiple times. Collapse findings
+                    // that are indistinguishable to the reader; genuinely distinct issues differ in
+                    // Message/Details and are preserved.
+                    if (seen.Add((finding.RuleId, finding.NodeId.ToString(), finding.Severity, finding.Message, finding.Details)))
+                    {
+                        findings.Add(finding);
+                    }
+                }
             }
         }
 

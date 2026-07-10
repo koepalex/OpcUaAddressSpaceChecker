@@ -1,10 +1,28 @@
+using System.ComponentModel;
+using System.Diagnostics;
+
 using Aspire.Hosting;
 using Projects;
 
+const int JitRegistryPort = 5000;
+const string JitImageName = "opcua-ijt-server";
+const string JitImageTag = "latest";
+const string JitRegistryImageRef = "localhost:5000/opcua-ijt-server";
+
 var builder = DistributedApplication.CreateBuilder(args);
 
+// The JIT (umati Industrial Joining Technologies) OPC UA server is built locally and served from a
+// local Docker registry (localhost:5000). Ensure the image is present before wiring the container,
+// building it via build-jit-server.ps1 when the registry does not yet have it.
+EnsureJitImage(builder.AppHostDirectory);
+
+var reportsDirectory = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "reports"));
+var opcPlcReportPath = Path.Combine(reportsDirectory, "opcplc.md");
+var umatiReportPath = Path.Combine(reportsDirectory, "umati.md");
+var jitReportPath = Path.Combine(reportsDirectory, "jit.md");
+
 var opcplc = builder
-    .AddContainer("opcplc", "mcr.microsoft.com/iotedge/opc-plc", "2.14.19")
+    .AddContainer("opcplc", "mcr.microsoft.com/iotedge/opc-plc", "2.14.20")
     .WithEndpoint(port: 50000, targetPort: 50000, scheme: "opc.tcp", name: "opcua")
     .WithArgs("--ph=localhost")
     .WithArgs("--cdn=localhost,opcplc")
@@ -24,10 +42,125 @@ var opcplc = builder
     .WithArgs("--at=FlatDirectory")
     .WithArgs("--drurs");
 
+var umati = builder
+    .AddContainer("umati", "ghcr.io/umati/sample-server", "develop")
+    .WithEndpoint(port: 4840, targetPort: 4840, scheme: "opc.tcp", name: "opcua");
+
+var jit = builder
+    .AddContainer("jit", JitRegistryImageRef, JitImageTag)
+    .WithEndpoint(port: 40451, targetPort: 40451, scheme: "opc.tcp", name: "opcua")
+    .WithEnvironment("OPCUA_HOSTNAME", "localhost");
+
 var opcPlcEndpoint = opcplc.GetEndpoint("opcua");
+var umatiEndpoint = umati.GetEndpoint("opcua");
+var jitEndpoint = jit.GetEndpoint("opcua");
 
 builder.AddProject<OpcUaAddressSpaceChecker>("opcua-address-space-checker")
     .WithEnvironment("OPCUA_ENDPOINT", opcPlcEndpoint)
-    .WithArgs("--nodeset-dir", @"C:\ode\UA-Nodeset");
+    .WithArgs("--output-format", "markdown")
+    .WithArgs("--output", opcPlcReportPath);
+
+builder.AddProject<OpcUaAddressSpaceChecker>("opcua-address-space-checker-umati")
+    .WithEnvironment("OPCUA_ENDPOINT", umatiEndpoint)
+    .WithArgs("--output-format", "markdown")
+    .WithArgs("--output", umatiReportPath);
+
+builder.AddProject<OpcUaAddressSpaceChecker>("opcua-address-space-checker-jit")
+    .WithEnvironment("OPCUA_ENDPOINT", jitEndpoint)
+    .WithArgs("--output-format", "markdown")
+    .WithArgs("--output", jitReportPath);
 
 builder.Build().Run();
+
+// Ensures the locally built JIT OPC UA server image is available in the local Docker registry
+// (localhost:5000). Probes the registry catalog and, when the image is missing, runs
+// build-jit-server.ps1 to build and push it, then re-probes to confirm availability.
+static void EnsureJitImage(string appHostDirectory)
+{
+    if (IsJitImagePresent())
+    {
+        return;
+    }
+
+    Console.WriteLine(
+        "JIT image not found in local registry; building via build-jit-server.ps1 " +
+        "(this can take several minutes on first run)…");
+
+    var scriptPath = Path.Combine(appHostDirectory, "build-jit-server.ps1");
+    if (!File.Exists(scriptPath))
+    {
+        throw new InvalidOperationException(
+            $"JIT build script not found at '{scriptPath}'.");
+    }
+
+    RunBuildScript(scriptPath);
+
+    if (!IsJitImagePresent())
+    {
+        throw new InvalidOperationException(
+            "JIT server image is still not present in the local registry after running " +
+            "build-jit-server.ps1; see the script output above for details.");
+    }
+}
+
+static bool IsJitImagePresent()
+{
+    try
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var tagsUri = $"http://localhost:{JitRegistryPort}/v2/{JitImageName}/tags/list";
+        var body = http.GetStringAsync(tagsUri).GetAwaiter().GetResult();
+        return body.Contains($"\"{JitImageTag}\"", StringComparison.Ordinal);
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+static void RunBuildScript(string scriptPath)
+{
+    // Prefer PowerShell 7 (pwsh); fall back to Windows PowerShell when pwsh is not on PATH.
+    foreach (var shell in new[] { "pwsh", "powershell.exe" })
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = shell,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(scriptPath);
+
+        Process process;
+        try
+        {
+            process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException($"Failed to start '{shell}'.");
+        }
+        catch (Win32Exception)
+        {
+            // Shell not found on PATH; try the next candidate.
+            continue;
+        }
+
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) Console.WriteLine(e.Data); };
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) Console.Error.WriteLine(e.Data); };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                "JIT server image build failed; see build-jit-server.ps1 output.");
+        }
+
+        return;
+    }
+
+    throw new InvalidOperationException(
+        "Neither 'pwsh' nor 'powershell.exe' could be started to run build-jit-server.ps1.");
+}

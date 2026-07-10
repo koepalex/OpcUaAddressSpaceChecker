@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using OpcUaAddressSpaceChecker.Validation;
 
@@ -6,14 +7,27 @@ namespace OpcUaAddressSpaceChecker.Reporting;
 public sealed class SarifReporter : IReporter
 {
     private const string ToolName = "OpcUaAddressSpaceChecker";
-    private const string ToolVersion = "1.0.0";
     private const string InformationUri = "https://github.com/koepalex/OpcUaAddressSpaceChecker";
     private const string SarifSchemaUri = "https://json.schemastore.org/sarif-2.1.0.json";
+
+    private static readonly string ToolVersion = GetToolVersion();
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
     };
+
+    private readonly NodeIdDisplayFormatter? _nodeIdFormatter;
+
+    /// <summary>
+    /// Creates a SARIF reporter. When a <paramref name="nodeIdFormatter"/> is supplied a readable
+    /// <c>browseName</c> property is emitted alongside the raw <c>nodeId</c>, keeping the SARIF
+    /// output schema-valid and machine-parseable while easier to read.
+    /// </summary>
+    public SarifReporter(NodeIdDisplayFormatter? nodeIdFormatter = null)
+    {
+        _nodeIdFormatter = nodeIdFormatter;
+    }
 
     public void Report(ValidationReport report, TextWriter writer)
     {
@@ -31,6 +45,7 @@ public sealed class SarifReporter : IReporter
                 {
                     text = $"OPC UA validation rule {group.Key}"
                 },
+                helpUri = RuleReferenceCatalog.Resolve(group.Key).ReferenceUrl,
                 defaultConfiguration = new
                 {
                     level = MapLevel(GetHighestSeverity(group))
@@ -63,13 +78,17 @@ public sealed class SarifReporter : IReporter
                         properties = new
                         {
                             nodeId = FormatNodeId(finding.NodeId),
+                            browseName = _nodeIdFormatter?.TryGetBrowseName(finding.NodeId),
                             browsePath = finding.BrowsePath
                         }
                     }
                 },
                 properties = new
                 {
-                    details = finding.Details
+                    details = finding.Details,
+                    referenceUrl = FindingReferenceResolver.Resolve(finding),
+                    declaringTypeNamespaceUri = finding.DeclaringTypeNamespaceUri,
+                    declaringTypeReferenceUrl = finding.DeclaringTypeReferenceUrl
                 }
             })
             .ToArray();
@@ -154,4 +173,23 @@ public sealed class SarifReporter : IReporter
 
     private static string Clean(string value) =>
         value.Replace('\r', ' ').Replace('\n', ' ');
+
+    private static string GetToolVersion()
+    {
+        var assembly = typeof(SarifReporter).Assembly;
+        var informationalVersion = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+        var version = string.IsNullOrWhiteSpace(informationalVersion)
+            ? assembly.GetName().Version?.ToString()
+            : informationalVersion;
+
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return "0.0.0";
+        }
+
+        var metadataIndex = version.IndexOf('+', StringComparison.Ordinal);
+        return metadataIndex < 0 ? version : version[..metadataIndex];
+    }
 }

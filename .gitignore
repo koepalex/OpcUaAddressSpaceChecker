@@ -55,3 +55,16 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Visual Studio
+.vs/
+
+# .NET Aspire
+**/.aspire/
+
+# Address-space checker report artifacts
+reports/
+*.sarif
+
+# Agent working directory
+.copilot-tracking/

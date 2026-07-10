@@ -15,10 +15,14 @@ public sealed class ChildTypeDefinitionIncompatibilityRule : IValidationRule
 
     public IEnumerable<ValidationFinding> Validate(LiveNode node, NodeState? typeDefinition, ValidationContext context)
     {
+        var declarations = context.GetInstanceDeclarations(node);
         foreach (var declaration in GenericRuleHelpers.ConcreteDeclarations(context, node)
                      .Where(declaration => !NodeId.IsNull(declaration.TypeDefinitionId)))
         {
-            foreach (var match in GenericRuleHelpers.FindChildrenByBrowsePath(node, declaration.BrowsePath))
+            var declaringRef = GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations);
+            var declaringTypeId = GenericRuleHelpers.ResolveDeclaringTypeId(node, declaration, declarations);
+            var declaringType = GenericRuleHelpers.FormatType(context, declaringTypeId);
+            foreach (var match in GenericRuleHelpers.FindChildrenByBrowsePath(context, node, declarations, declaration.BrowsePath))
             {
                 if (GenericRuleHelpers.IsTypeCompatible(context, match.Child.TypeDefinitionId, declaration.TypeDefinitionId))
                 {
@@ -31,7 +35,11 @@ public sealed class ChildTypeDefinitionIncompatibilityRule : IValidationRule
                     match.Child.NodeId,
                     GenericRuleHelpers.FormatBrowsePath(declaration.BrowsePath),
                     "Child TypeDefinition is not compatible with its InstanceDeclaration.",
-                    $"Expected {GenericRuleHelpers.FormatNodeId(declaration.TypeDefinitionId)} or a subtype; actual {GenericRuleHelpers.FormatNodeId(match.Child.TypeDefinitionId)}.");
+                    $"Child {GenericRuleHelpers.FormatBrowseName(match.Child.BrowseName)} declared by type {declaringType}. " +
+                    $"Expected TypeDefinition {GenericRuleHelpers.FormatNode(context, declaration.TypeDefinitionId)} or a subtype; " +
+                    $"actual {GenericRuleHelpers.FormatNode(context, match.Child.TypeDefinitionId)}.",
+                    declaringRef.NamespaceUri,
+                    declaringRef.ReferenceUrl);
             }
         }
     }

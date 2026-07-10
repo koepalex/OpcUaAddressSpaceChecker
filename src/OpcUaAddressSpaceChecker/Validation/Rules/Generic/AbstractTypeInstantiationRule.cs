@@ -26,6 +26,6 @@ public sealed class AbstractTypeInstantiationRule : IValidationRule
             node.NodeId,
             GenericRuleHelpers.FormatBrowseName(node.BrowseName),
             "Instance directly uses an abstract TypeDefinition.",
-            $"TypeDefinition={GenericRuleHelpers.FormatNodeId(node.TypeDefinitionId)}.");
+            $"TypeDefinition={GenericRuleHelpers.FormatNode(context, node.TypeDefinitionId)}.");
     }
 }

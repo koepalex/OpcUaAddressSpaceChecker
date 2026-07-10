@@ -13,7 +13,6 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>OpcUaAddressSpaceChecker</PackageId>
-    <Version>1.0.0</Version>
     <Authors>Alexander Köpke</Authors>
     <Description>A .NET global tool that connects to an OPC UA server and validates its address space against NodeSet2 type models.</Description>
     <PackageTags>opcua;opc-ua;nodeset2;validation;address-space;industrial;iot;automation</PackageTags>
@@ -23,6 +22,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Versioning -->
+    <PackageReference Include="GitVersion.MsBuild" Version="6.8.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+
     <!-- OPC UA Stack -->
     <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.152" />
     <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" Version="1.5.378.152" />

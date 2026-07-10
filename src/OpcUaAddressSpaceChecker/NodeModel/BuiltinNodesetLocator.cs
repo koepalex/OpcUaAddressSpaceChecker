@@ -7,8 +7,6 @@ namespace OpcUaAddressSpaceChecker.NodeModel;
 /// </summary>
 public sealed class BuiltinNodesetLocator
 {
-    public const string DefaultNodesetDirectory = @"C:\ode\UA-Nodeset";
-
     private static readonly IReadOnlyDictionary<string, string> WellKnownRelativePaths =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -137,18 +135,11 @@ public sealed class BuiltinNodesetLocator
 
     private static IReadOnlyList<string> NormalizeSearchDirectories(IEnumerable<string>? searchDirectories)
     {
-        var result = (searchDirectories ?? [])
+        return (searchDirectories ?? [])
             .Where(directory => !string.IsNullOrWhiteSpace(directory))
             .Select(Path.GetFullPath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-        if (!result.Contains(DefaultNodesetDirectory, StringComparer.OrdinalIgnoreCase))
-        {
-            result.Add(DefaultNodesetDirectory);
-        }
-
-        return result;
     }
 
     private sealed record LocatedNodeset(string Path, DateTimeOffset? PublicationDate);

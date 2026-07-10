@@ -21,7 +21,7 @@ public sealed class OptionalPlaceholderConformanceRule : IValidationRule
         {
             IReadOnlyList<LiveNode> parentNodes = placeholder.BrowsePath.Count == 1
                 ? [node]
-                : GenericRuleHelpers.ResolveParentLinks(node, placeholder.BrowsePath).Select(link => link.Child).ToArray();
+                : GenericRuleHelpers.ResolveParentLinks(context, node, declarations, placeholder.BrowsePath).Select(link => link.Child).ToArray();
 
             foreach (var parent in parentNodes)
             {
@@ -44,7 +44,7 @@ public sealed class OptionalPlaceholderConformanceRule : IValidationRule
                             child.Child.NodeId,
                             GenericRuleHelpers.FormatBrowsePath(placeholder.BrowsePath),
                             "OptionalPlaceholder child uses an incompatible reference type.",
-                            $"Expected {GenericRuleHelpers.FormatNodeId(placeholder.ReferenceTypeId)} or a subtype; actual {GenericRuleHelpers.FormatNodeId(child.Reference.ReferenceTypeId)}.");
+                            $"Expected {GenericRuleHelpers.FormatNode(context, placeholder.ReferenceTypeId)} or a subtype; actual {GenericRuleHelpers.FormatNode(context, child.Reference.ReferenceTypeId)}.");
                     }
                     else if (referenceCompatible && !typeCompatible)
                     {
@@ -54,7 +54,7 @@ public sealed class OptionalPlaceholderConformanceRule : IValidationRule
                             child.Child.NodeId,
                             GenericRuleHelpers.FormatBrowsePath(placeholder.BrowsePath),
                             "OptionalPlaceholder child uses an incompatible TypeDefinition.",
-                            $"Expected {GenericRuleHelpers.FormatNodeId(placeholder.TypeDefinitionId)} or a subtype; actual {GenericRuleHelpers.FormatNodeId(child.Child.TypeDefinitionId)}.");
+                            $"Expected {GenericRuleHelpers.FormatNode(context, placeholder.TypeDefinitionId)} or a subtype; actual {GenericRuleHelpers.FormatNode(context, child.Child.TypeDefinitionId)}.");
                     }
                 }
             }

@@ -11,7 +11,7 @@ public sealed class HasTypeDefinitionPresenceRule : IValidationRule
     public string Description => "Object and Variable instances must expose a HasTypeDefinition.";
 
     public bool Applies(LiveNode node, NodeState? typeDefinition, ValidationContext context) =>
-        GenericRuleHelpers.IsObjectOrVariable(node);
+        GenericRuleHelpers.IsObjectOrVariable(node) && !GenericRuleHelpers.IsCoreNamespace(node);
 
     public IEnumerable<ValidationFinding> Validate(LiveNode node, NodeState? typeDefinition, ValidationContext context)
     {

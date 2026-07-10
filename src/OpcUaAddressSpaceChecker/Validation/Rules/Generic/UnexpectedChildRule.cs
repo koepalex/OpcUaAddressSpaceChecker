@@ -34,7 +34,7 @@ public sealed class UnexpectedChildRule : IValidationRule
                 child.Child.NodeId,
                 GenericRuleHelpers.FormatBrowseName(child.Child.BrowseName),
                 "Child is not covered by the instance's TypeDefinition declarations.",
-                $"ReferenceType={GenericRuleHelpers.FormatNodeId(child.Reference.ReferenceTypeId)}, TypeDefinition={GenericRuleHelpers.FormatNodeId(child.Child.TypeDefinitionId)}.");
+                $"ReferenceType={GenericRuleHelpers.FormatNode(context, child.Reference.ReferenceTypeId)}, TypeDefinition={GenericRuleHelpers.FormatNode(context, child.Child.TypeDefinitionId)}.");
         }
     }
 }

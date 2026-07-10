@@ -39,7 +39,7 @@ public sealed class SubtypeModellingRuleConsistencyRule : IValidationRule
                         node.NodeId,
                         key,
                         "Subtype declaration loosens an inherited ModellingRule.",
-                        $"Inherited {GenericRuleHelpers.FormatNodeId(inherited.ModellingRuleId)}; subtype {GenericRuleHelpers.FormatNodeId(declaration.ModellingRuleId)} on type {GenericRuleHelpers.FormatNodeId(typeNode.NodeId)}.");
+                        $"Inherited {GenericRuleHelpers.FormatNode(context, inherited.ModellingRuleId)}; subtype {GenericRuleHelpers.FormatNode(context, declaration.ModellingRuleId)} on type {GenericRuleHelpers.FormatNode(context, typeNode.NodeId)}.");
                     continue;
                 }
 

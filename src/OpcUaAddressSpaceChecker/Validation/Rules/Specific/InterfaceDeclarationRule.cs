@@ -31,9 +31,10 @@ public sealed class InterfaceDeclarationRule : IValidationRule
         NodeState? typeDefinition,
         ValidationContext context)
     {
-        foreach (var declaration in GetInterfaceDeclarations(context))
+        var interfaceDeclarations = GetInterfaceDeclarations(context);
+        foreach (var declaration in interfaceDeclarations)
         {
-            if (!CompanionSpecRuleHelpers.BrowsePathExists(node, declaration.BrowsePath, context))
+            if (!CompanionSpecRuleHelpers.BrowsePathExists(node, declaration.BrowsePath, context, interfaceDeclarations))
             {
                 yield return new ValidationFinding(
                     RuleId,
