@@ -20,6 +20,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fetch UA-Nodeset companion specs
+        uses: actions/checkout@v4
+        with:
+          repository: OPCFoundation/UA-Nodeset
+          ref: c335f575ca77c025cdf5dc994b03411d093571ef
+          path: ua-nodeset
+          sparse-checkout: |
+            Schema
+            DI
+            IA
+            Machinery
+            Pumps
+          sparse-checkout-cone-mode: true
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -32,4 +46,6 @@ jobs:
         run: dotnet build OpcUaAddressSpaceChecker.slnx -c Release --no-restore
 
       - name: Run unit tests
+        env:
+          UA_NODESET_DIR: ${{ github.workspace }}/ua-nodeset
         run: dotnet test tests/OpcUaAddressSpaceChecker.Tests/OpcUaAddressSpaceChecker.Tests.csproj --filter "Category!=Integration"

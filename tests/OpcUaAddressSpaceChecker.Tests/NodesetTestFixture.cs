@@ -16,21 +16,20 @@ public sealed class NodesetTestFixture
     public const string MachineryModelUri = "http://opcfoundation.org/UA/Machinery/";
     public const string PumpsModelUri = "http://opcfoundation.org/UA/Pumps/";
 
-    private const string NodesetDirectory = @"C:\ode\UA-Nodeset";
-
     public NodesetTestFixture()
     {
+        var nodesetDirectory = NodesetTestData.Root;
         var seeds = new[]
         {
-            Path.Combine(NodesetDirectory, @"Schema\Opc.Ua.NodeSet2.xml"),
-            Path.Combine(NodesetDirectory, @"DI\Opc.Ua.Di.NodeSet2.xml"),
-            Path.Combine(NodesetDirectory, @"IA\Opc.Ua.IA.NodeSet2.xml"),
-            Path.Combine(NodesetDirectory, @"Machinery\Opc.Ua.Machinery.NodeSet2.xml"),
-            Path.Combine(NodesetDirectory, @"Pumps\Opc.Ua.Pumps.NodeSet2.xml")
+            Path.Combine(nodesetDirectory, "Schema", "Opc.Ua.NodeSet2.xml"),
+            Path.Combine(nodesetDirectory, "DI", "Opc.Ua.Di.NodeSet2.xml"),
+            Path.Combine(nodesetDirectory, "IA", "Opc.Ua.IA.NodeSet2.xml"),
+            Path.Combine(nodesetDirectory, "Machinery", "Opc.Ua.Machinery.NodeSet2.xml"),
+            Path.Combine(nodesetDirectory, "Pumps", "Opc.Ua.Pumps.NodeSet2.xml")
         };
 
         var loadOrder = new NodesetDependencyResolver()
-            .ResolveLoadOrder(seeds, [NodesetDirectory]);
+            .ResolveLoadOrder(seeds, [nodesetDirectory]);
 
         Loaded = new NodesetLoader().Load(loadOrder);
         Model = new NodesetModelIndex(Loaded);

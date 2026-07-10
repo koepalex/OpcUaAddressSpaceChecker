@@ -52,14 +52,14 @@ public sealed class IntegrationTests
             client);
         var snapshot = await browser.FetchAllNodesAsync();
 
-        var nodesetRoot = @"C:\ode\UA-Nodeset";
+        var nodesetRoot = NodesetTestData.Root;
         var loadOrder = new NodesetDependencyResolver().ResolveLoadOrder(
             [
-                Path.Combine(nodesetRoot, @"Schema\Opc.Ua.NodeSet2.xml"),
-                Path.Combine(nodesetRoot, @"DI\Opc.Ua.Di.NodeSet2.xml"),
-                Path.Combine(nodesetRoot, @"IA\Opc.Ua.IA.NodeSet2.xml"),
-                Path.Combine(nodesetRoot, @"Machinery\Opc.Ua.Machinery.NodeSet2.xml"),
-                Path.Combine(nodesetRoot, @"Pumps\Opc.Ua.Pumps.NodeSet2.xml")
+                Path.Combine(nodesetRoot, "Schema", "Opc.Ua.NodeSet2.xml"),
+                Path.Combine(nodesetRoot, "DI", "Opc.Ua.Di.NodeSet2.xml"),
+                Path.Combine(nodesetRoot, "IA", "Opc.Ua.IA.NodeSet2.xml"),
+                Path.Combine(nodesetRoot, "Machinery", "Opc.Ua.Machinery.NodeSet2.xml"),
+                Path.Combine(nodesetRoot, "Pumps", "Opc.Ua.Pumps.NodeSet2.xml")
             ],
             [nodesetRoot]);
         var typeModel = new NodesetModelIndex(new NodesetLoader().Load(loadOrder));
@@ -124,13 +124,13 @@ public sealed class IntegrationTests
             client);
         var snapshot = await browser.FetchAllNodesAsync();
 
-        var nodesetRoot = @"C:\ode\UA-Nodeset";
+        var nodesetRoot = NodesetTestData.Root;
         var loadOrder = new NodesetDependencyResolver().ResolveLoadOrder(
             [
-                Path.Combine(nodesetRoot, @"Schema\Opc.Ua.NodeSet2.xml"),
-                Path.Combine(nodesetRoot, @"DI\Opc.Ua.Di.NodeSet2.xml"),
-                Path.Combine(nodesetRoot, @"IA\Opc.Ua.IA.NodeSet2.xml"),
-                Path.Combine(nodesetRoot, @"Machinery\Opc.Ua.Machinery.NodeSet2.xml")
+                Path.Combine(nodesetRoot, "Schema", "Opc.Ua.NodeSet2.xml"),
+                Path.Combine(nodesetRoot, "DI", "Opc.Ua.Di.NodeSet2.xml"),
+                Path.Combine(nodesetRoot, "IA", "Opc.Ua.IA.NodeSet2.xml"),
+                Path.Combine(nodesetRoot, "Machinery", "Opc.Ua.Machinery.NodeSet2.xml")
             ],
             [nodesetRoot]);
         var typeModel = new NodesetModelIndex(new NodesetLoader().Load(loadOrder));
