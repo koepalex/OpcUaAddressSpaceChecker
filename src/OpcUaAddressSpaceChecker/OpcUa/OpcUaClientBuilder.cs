@@ -533,6 +533,7 @@ public class OpcUaClientBuilder
         {
             var code = sre.StatusCode;
             return code == StatusCodes.BadServerNotConnected ||
+                   code == StatusCodes.BadServerHalted ||
                    code == StatusCodes.BadConnectionClosed ||
                    code == StatusCodes.BadCommunicationError ||
                    code == StatusCodes.BadTimeout ||
