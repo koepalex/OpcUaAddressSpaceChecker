@@ -4,31 +4,80 @@ on:
   push:
     tags:
       - 'v*'
-  release:
-    types:
-      - published
+      - '[0-9]+.[0-9]+.[0-9]+*'
 
-permissions:
-  contents: read
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_NOLOGO: 'true'
 
 jobs:
   publish:
-    name: Pack and publish
+    name: Pack, release, and publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub Release
+      id-token: write   # OIDC token for nuget.org trusted publishing
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0   # GitVersion needs full history and tags to derive the version
+
+      - name: Fetch UA-Nodeset companion specs
+        uses: actions/checkout@v4
+        with:
+          repository: OPCFoundation/UA-Nodeset
+          ref: c335f575ca77c025cdf5dc994b03411d093571ef
+          path: ua-nodeset
+          sparse-checkout: |
+            Schema
+            DI
+            IA
+            Machinery
+            Pumps
+          sparse-checkout-cone-mode: true
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: dotnet build OpcUaAddressSpaceChecker.slnx -c Release --no-restore
+
+      - name: Run unit tests
+        env:
+          UA_NODESET_DIR: ${{ github.workspace }}/ua-nodeset
+        run: dotnet test tests/OpcUaAddressSpaceChecker.Tests/OpcUaAddressSpaceChecker.Tests.csproj -c Release --no-build --filter "Category!=Integration"
 
       - name: Pack tool
-        run: dotnet pack src/OpcUaAddressSpaceChecker/OpcUaAddressSpaceChecker.csproj -c Release -o nupkg
+        run: dotnet pack src/OpcUaAddressSpaceChecker/OpcUaAddressSpaceChecker.csproj -c Release --no-build -o artifacts
+
+      - name: Create GitHub Release (draft)
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            artifacts/*.nupkg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: NuGet login (OIDC trusted publishing)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
 
       - name: Push package to NuGet
-        run: dotnet nuget push nupkg/*.nupkg --skip-duplicate --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+        run: >-
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
