@@ -69,7 +69,7 @@ public static class RuleReferenceCatalog
             ["DI-02"] = new("Organize the root DI component under DeviceSet or make it reachable from DeviceSet.", di),
             ["DI-03"] = new("Add at least one parameter Variable under ParameterSet and Method children under MethodSet when present.", di),
             ["DI-04"] = new("Add Locked, LockingClient, LockingUser, RemainingLockTime, InitLock, RenewLock, ExitLock, and BreakLock.", di),
-            ["DI-05"] = new("Add the missing interface-derived declaration paths required by the DI DeviceType interfaces.", di),
+            ["DI-05"] = new("Mandatory interface-derived declarations must be present; optional nameplate/support-info members are only required if the device exposes that metadata.", di),
             ["MACHINERY-01"] = new("Organize machine instances under the Machines entry point or make them hierarchically reachable from it.", machinery),
             ["PUMPS-01"] = new("Set the Configuration object TypeDefinition to ConfigurationGroupType or a valid subtype.", pumps),
             ["PUMPS-02"] = new("Move ConfigurationGroupType descendant nodes under the pump Configuration object.", pumps),

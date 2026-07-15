@@ -1,5 +1,6 @@
 using Opc.Ua;
 using OpcUaAddressSpaceChecker.OpcUa;
+using OpcUaAddressSpaceChecker.Validation;
 using OpcUaAddressSpaceChecker.Validation.Rules.Specific;
 
 namespace OpcUaAddressSpaceChecker.Tests.Validation;
@@ -88,6 +89,35 @@ public sealed class SpecificRuleTests(NodesetTestFixture fixture) : IClassFixtur
         Assert.Contains(findings, finding => finding.RuleId == "PUMPS-03" && finding.BrowsePath.Contains("Design", StringComparison.Ordinal));
         Assert.Contains(findings, finding => finding.RuleId == "PUMPS-03" && finding.BrowsePath.Contains("SystemRequirements", StringComparison.Ordinal));
         Assert.Empty(rule.Validate(valid, pumpType, fixture.Context));
+    }
+
+    [Fact]
+    public void Di05_reports_missing_optional_interface_members_as_information_not_error()
+    {
+        var deviceType = fixture.FindType(NodesetTestFixture.DiModelUri, "DeviceType");
+        var rule = new InterfaceDeclarationRule();
+
+        // A DeviceType instance carrying only its mandatory nameplate properties: the optional
+        // interface members (ManufacturerUri, ProductCode, AssetId, DeviceHealth, the ISupportInfoType
+        // tree, ...) are all absent.
+        var device = DeviceWithProperties(deviceType.NodeId, fixture.NamespaceIndex(NodesetTestFixture.DiModelUri), MandatoryDeviceProperties);
+
+        var findings = rule.Validate(device, deviceType, fixture.Context).ToArray();
+
+        Assert.NotEmpty(findings);
+        Assert.All(findings, finding => Assert.Equal("DI-05", finding.RuleId));
+        // No optional member may be reported as an Error or Warning.
+        Assert.DoesNotContain(findings, finding => finding.Severity != Severity.Information);
+        // The well-known optional interface members surface as informational entries.
+        Assert.Contains(findings, finding =>
+            finding.Severity == Severity.Information &&
+            finding.BrowsePath.Contains("ManufacturerUri", StringComparison.Ordinal));
+        Assert.Contains(findings, finding =>
+            finding.Severity == Severity.Information &&
+            finding.BrowsePath.Contains("AssetId", StringComparison.Ordinal));
+        Assert.Contains(findings, finding =>
+            finding.Severity == Severity.Information &&
+            finding.Message.Contains("not implemented", StringComparison.Ordinal));
     }
 
     private static LiveNode DeviceWithProperties(

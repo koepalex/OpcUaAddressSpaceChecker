@@ -232,6 +232,46 @@ public sealed class MarkdownReporterTests
     }
 
     [Fact]
+    public void Report_places_information_findings_in_their_own_optional_section()
+    {
+        var findings = new[]
+        {
+            new ValidationFinding(
+                "DI-01",
+                Severity.Error,
+                new NodeId("Device1", 2),
+                "Objects/DeviceSet/Device1",
+                "Missing mandatory DI nameplate property Manufacturer.",
+                null),
+            new ValidationFinding(
+                "DI-05",
+                Severity.Information,
+                new NodeId("Device1", 2),
+                "Objects/DeviceSet/Device1/ManufacturerUri",
+                "Optional interface member 'ManufacturerUri' is not implemented.",
+                "Optional HasInterface-derived declaration path is not materialized.")
+        };
+
+        var report = new ValidationReport(1, findings.Length, findings);
+        var writer = new StringWriter();
+
+        new MarkdownReporter(NamespaceSnapshot).Report(report, writer);
+        var output = writer.ToString();
+
+        var infoSectionIndex = output.IndexOf(
+            "## Optional members not implemented (informational)",
+            StringComparison.Ordinal);
+        Assert.True(infoSectionIndex > 0, "Expected a dedicated informational section.");
+
+        // The optional-member message appears only after the informational section header, and the
+        // error appears before it (violations first).
+        var errorIndex = output.IndexOf("Missing mandatory DI nameplate property", StringComparison.Ordinal);
+        var infoMessageIndex = output.IndexOf("Optional interface member 'ManufacturerUri'", StringComparison.Ordinal);
+        Assert.True(errorIndex >= 0 && errorIndex < infoSectionIndex, "Error should render before the informational section.");
+        Assert.True(infoMessageIndex > infoSectionIndex, "Informational finding should render inside the informational section.");
+    }
+
+    [Fact]
     public void Report_with_no_findings_emits_note_and_no_table()
     {
         var report = new ValidationReport(10, 0, []);

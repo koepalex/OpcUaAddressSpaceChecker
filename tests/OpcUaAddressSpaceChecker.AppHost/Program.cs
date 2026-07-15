@@ -54,7 +54,7 @@ var jit = builder
 // The OPC Foundation Pump Device Integration reference server implements the Pumps companion
 // specification. It listens on opc.tcp port 62542 and accepts anonymous/None connections.
 var pump = builder
-    .AddContainer("pump", "ghcr.io/opcfoundation/pumpdeviceintegrationserver", "2.0.76.10781-preview")
+    .AddContainer("pump", "ghcr.io/opcfoundation/pumpdeviceintegrationserver", "2.0.78.11812-preview")
     .WithEndpoint(port: 62542, targetPort: 62542, scheme: "opc.tcp", name: "opcua");
 
 var opcPlcEndpoint = opcplc.GetEndpoint("opcua");

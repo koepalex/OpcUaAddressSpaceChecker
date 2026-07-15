@@ -60,7 +60,33 @@ public sealed class MarkdownReporter : IReporter
             return;
         }
 
-        var groups = report.Findings
+        var violations = report.Findings
+            .Where(finding => finding.Severity != Severity.Information)
+            .ToArray();
+        var informational = report.Findings
+            .Where(finding => finding.Severity == Severity.Information)
+            .ToArray();
+
+        if (violations.Length > 0)
+        {
+            WriteFindingGroups(violations, writer);
+        }
+
+        if (informational.Length > 0)
+        {
+            writer.WriteLine("## Optional members not implemented (informational)");
+            writer.WriteLine();
+            writer.WriteLine(
+                "_Optional declarations that are not materialized on the instance. These are conformant " +
+                "omissions, not violations._");
+            writer.WriteLine();
+            WriteFindingGroups(informational, writer);
+        }
+    }
+
+    private void WriteFindingGroups(IReadOnlyCollection<ValidationFinding> findings, TextWriter writer)
+    {
+        var groups = findings
             .GroupBy(finding => ResolveUri(finding.NodeId), StringComparer.Ordinal)
             .OrderBy(group => group.Key, StringComparer.Ordinal);
 

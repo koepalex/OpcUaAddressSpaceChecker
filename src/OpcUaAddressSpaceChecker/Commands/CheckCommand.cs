@@ -497,10 +497,20 @@ public class CheckCommand : RootCommand
             }
 
             // Apply the severity threshold to the reported findings.
-            var filteredFindings = configFiltered.Findings
+            var thresholdFindings = configFiltered.Findings
                 .Where(finding => finding.Severity >= severityThresholdValue)
                 .ToList();
-            var outputReport = new ValidationReport(report.TotalNodes, filteredFindings.Count, filteredFindings);
+
+            // Informational findings (e.g. optional interface members that are not implemented) are
+            // always surfaced in their own report section, independent of the severity threshold, and
+            // never affect the exit code. When the threshold already includes Information they are
+            // present in thresholdFindings, so only add the remainder to avoid duplicates.
+            var reportFindings = severityThresholdValue <= Severity.Information
+                ? thresholdFindings
+                : thresholdFindings
+                    .Concat(configFiltered.Findings.Where(finding => finding.Severity == Severity.Information))
+                    .ToList();
+            var outputReport = new ValidationReport(report.TotalNodes, reportFindings.Count, reportFindings);
 
             // Select the reporter and render the report to a file or stdout.
             var namespaceSnapshot = BuildNamespaceSnapshot(client.Session.NamespaceUris);
@@ -547,13 +557,15 @@ public class CheckCommand : RootCommand
             logger.LogInformation(
                 "Validation complete: {Nodes} nodes checked, {Findings} finding(s) at or above '{Threshold}' (errors={Errors}, warnings={Warnings}, info={Info}).",
                 report.TotalNodes,
-                outputReport.TotalFindings,
+                thresholdFindings.Count,
                 severityThreshold,
                 outputReport.ErrorCount,
                 outputReport.WarningCount,
                 outputReport.InformationCount);
 
-            return outputReport.TotalFindings > 0 ? 1 : 0;
+            // Informational findings never fail the run; the exit code reflects only findings at or
+            // above the configured severity threshold.
+            return thresholdFindings.Count > 0 ? 1 : 0;
         }
         catch (OperationCanceledException)
         {
