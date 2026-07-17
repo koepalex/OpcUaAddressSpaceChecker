@@ -17,6 +17,7 @@
     <Description>A .NET global tool that connects to an OPC UA server and validates its address space against NodeSet2 type models.</Description>
     <PackageTags>opcua;opc-ua;nodeset2;validation;address-space;industrial;iot;automation</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/koepalex/OpcUaAddressSpaceChecker</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
@@ -45,6 +46,7 @@
   <ItemGroup>
     <!-- Default user-editable configuration shipped alongside the tool. -->
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

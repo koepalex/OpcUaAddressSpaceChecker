@@ -59,6 +59,13 @@ jobs:
       - name: Pack tool
         run: dotnet pack src/OpcUaAddressSpaceChecker/OpcUaAddressSpaceChecker.csproj -c Release --no-build -o artifacts
 
+      - name: Verify package README
+        run: |
+          package="$(find artifacts -maxdepth 1 -name '*.nupkg' -print -quit)"
+          test -n "$package"
+          unzip -Z1 "$package" | grep --line-regexp 'README.md'
+          unzip -p "$package" '*.nuspec' | grep --fixed-strings '<readme>README.md</readme>'
+
       - name: Create GitHub Release (draft)
         uses: softprops/action-gh-release@v3
         with:
