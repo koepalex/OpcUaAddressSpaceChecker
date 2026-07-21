@@ -19,6 +19,12 @@ public class CheckerOptions : OpcUaClientOptions
     public string[] NodesetSearchDirs { get; set; } = [];
 
     /// <summary>
+    /// Optional ObjectType or VariableType ExpandedNodeId used to limit validation to instances of
+    /// that type or its subtypes.
+    /// </summary>
+    public string? TargetTypeId { get; set; }
+
+    /// <summary>
     /// Output format: console, json, sarif, or markdown.
     /// </summary>
     public string OutputFormat { get; set; } = "console";

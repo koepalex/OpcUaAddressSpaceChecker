@@ -546,33 +546,10 @@ internal static class CompanionSpecRuleHelpers
             return false;
         }
 
-        var liveUri = liveOrModelTypeId.NamespaceIndex == 0
-            ? Namespaces.OpcUa
-            : context.ResolveNamespaceUri(liveOrModelTypeId);
-        var modelUriAtSameIndex = ResolveModelUri(context.TypeModel, liveOrModelTypeId);
-
-        if (context.TypeModel.TryGetType(liveOrModelTypeId, out _) &&
-            (liveOrModelTypeId.NamespaceIndex == 0 ||
-             string.Equals(liveUri, modelUriAtSameIndex, StringComparison.Ordinal)))
-        {
-            modelTypeId = liveOrModelTypeId;
-            return true;
-        }
-
-        if (string.IsNullOrEmpty(liveUri) ||
-            !TryGetModelNamespaceIndex(context.TypeModel, liveUri, out var modelNamespaceIndex))
-        {
-            return false;
-        }
-
-        var mappedTypeId = new NodeId(liveOrModelTypeId.Identifier, modelNamespaceIndex);
-        if (!context.TypeModel.TryGetType(mappedTypeId, out _))
-        {
-            return false;
-        }
-
-        modelTypeId = mappedTypeId;
-        return true;
+        return context.TypeModel.TryMapTypeId(
+            liveOrModelTypeId,
+            context.LiveSession.NamespaceUris,
+            out modelTypeId);
     }
 
     private static bool TryGetModelNamespaceIndex(

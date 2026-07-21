@@ -7,6 +7,7 @@ const int JitRegistryPort = 5000;
 const string JitImageName = "opcua-ijt-server";
 const string JitImageTag = "latest";
 const string JitRegistryImageRef = "localhost:5000/opcua-ijt-server";
+const string PumpTypeId = "nsu=http://opcfoundation.org/UA/Pumps/;i=1052";
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -20,6 +21,7 @@ var opcPlcReportPath = Path.Combine(reportsDirectory, "opcplc.md");
 var umatiReportPath = Path.Combine(reportsDirectory, "umati.md");
 var jitReportPath = Path.Combine(reportsDirectory, "jit.md");
 var pumpReportPath = Path.Combine(reportsDirectory, "pump.md");
+var pumpTypeReportPath = Path.Combine(reportsDirectory, "pump-type.md");
 
 var opcplc = builder
     .AddContainer("opcplc", "mcr.microsoft.com/iotedge/opc-plc", "2.14.20")
@@ -54,7 +56,7 @@ var jit = builder
 // The OPC Foundation Pump Device Integration reference server implements the Pumps companion
 // specification. It listens on opc.tcp port 62542 and accepts anonymous/None connections.
 var pump = builder
-    .AddContainer("pump", "ghcr.io/opcfoundation/pumpdeviceintegrationserver", "2.0.78.11812-preview")
+    .AddContainer("pump", "ghcr.io/opcfoundation/pumpdeviceintegrationserver", "2.0.83.32904-preview")
     .WithEndpoint(port: 62542, targetPort: 62542, scheme: "opc.tcp", name: "opcua");
 
 var opcPlcEndpoint = opcplc.GetEndpoint("opcua");
@@ -98,6 +100,15 @@ builder.AddExecutable(
         "dotnet",
         builder.AppHostDirectory,
         checkerAssemblyPath, "--retry-count", "5", "--retry-delay", "3", "--output-format", "markdown", "--output", pumpReportPath)
+    .WithEnvironment("OPCUA_ENDPOINT", pumpEndpoint)
+    .WaitFor(pump);
+
+builder.AddExecutable(
+        "opcua-address-space-checker-pump-type",
+        "dotnet",
+        builder.AppHostDirectory,
+        checkerAssemblyPath, "--retry-count", "5", "--retry-delay", "3", "--type", PumpTypeId,
+        "--output-format", "markdown", "--output", pumpTypeReportPath)
     .WithEnvironment("OPCUA_ENDPOINT", pumpEndpoint)
     .WaitFor(pump);
 

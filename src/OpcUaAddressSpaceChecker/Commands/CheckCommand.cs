@@ -111,6 +111,13 @@ public class CheckCommand : RootCommand
             DefaultValueFactory = (_) => []
         };
 
+        var typeOption = new Option<string?>(
+            name: "--type")
+        {
+            Description = "Optional ObjectType or VariableType ExpandedNodeId. When supplied, validates only instances of that type or its subtypes.",
+            DefaultValueFactory = (_) => null
+        };
+
         var configOption = new Option<string?>(
             name: "--config")
         {
@@ -195,6 +202,7 @@ public class CheckCommand : RootCommand
         Options.Add(certificateFromStdinOption);
         Options.Add(nodesetOption);
         Options.Add(nodesetDirOption);
+        Options.Add(typeOption);
         Options.Add(configOption);
         Options.Add(outputFormatOption);
         Options.Add(outputOption);
@@ -220,6 +228,7 @@ public class CheckCommand : RootCommand
             var certificateFromStdin = parseResult.GetValue(certificateFromStdinOption);
             var nodesets = parseResult.GetValue(nodesetOption) ?? [];
             var nodesetDirs = parseResult.GetValue(nodesetDirOption) ?? [];
+            var targetTypeId = parseResult.GetValue(typeOption);
             var configPath = parseResult.GetValue(configOption);
             var outputFormat = parseResult.GetValue(outputFormatOption)!;
             var output = parseResult.GetValue(outputOption);
@@ -244,6 +253,7 @@ public class CheckCommand : RootCommand
                 certificateFromStdin,
                 nodesets,
                 nodesetDirs,
+                targetTypeId,
                 configPath,
                 outputFormat,
                 output,
@@ -271,6 +281,7 @@ public class CheckCommand : RootCommand
         bool certificateFromStdin,
         string[] nodesets,
         string[] nodesetDirs,
+        string? targetTypeId,
         string? configPath,
         string outputFormat,
         string? output,
@@ -298,6 +309,16 @@ public class CheckCommand : RootCommand
 
         try
         {
+            ExpandedNodeId? parsedTargetTypeId = null;
+            if (!string.IsNullOrWhiteSpace(targetTypeId))
+            {
+                if (!TypeDefinitionSelector.TryParse(targetTypeId, out parsedTargetTypeId, out var typeParseError))
+                {
+                    logger.LogError("{Message}", typeParseError);
+                    return 10;
+                }
+            }
+
             if (!IsOneOf(outputFormat, OutputFormats))
             {
                 logger.LogError("Invalid output format: {OutputFormat}. Valid values: console, json, sarif, markdown", outputFormat);
@@ -355,6 +376,7 @@ public class CheckCommand : RootCommand
                 Certificate = certificate,
                 NodesetPaths = nodesets,
                 NodesetSearchDirs = nodesetDirs,
+                TargetTypeId = targetTypeId,
                 OutputFormat = outputFormat,
                 OutputPath = output,
                 SeverityThreshold = severityThreshold,
@@ -390,6 +412,10 @@ public class CheckCommand : RootCommand
                 useNodesetOverride ? "NodeSet2 files (override)" : "live server Types folder (i=86)");
             logger.LogInformation("Output format: {OutputFormat}", options.OutputFormat);
             logger.LogInformation("Severity threshold: {SeverityThreshold}", options.SeverityThreshold);
+            if (parsedTargetTypeId != null)
+            {
+                logger.LogInformation("Target type: {TargetType} (including subtypes)", parsedTargetTypeId);
+            }
 
             if (string.IsNullOrWhiteSpace(options.Endpoint))
             {
@@ -472,6 +498,33 @@ public class CheckCommand : RootCommand
             // Browse the live address space into materialized LiveNodes.
             var browser = new AddressSpaceBrowser(loggerFactory.CreateLogger<AddressSpaceBrowser>(), client);
             var snapshot = await browser.FetchAllNodesAsync(cancellationToken).ConfigureAwait(false);
+            IReadOnlyCollection<LiveNode> validationNodes = snapshot.Nodes;
+
+            if (parsedTargetTypeId != null)
+            {
+                var selection = TypeDefinitionSelector.Select(
+                    parsedTargetTypeId,
+                    snapshot.Nodes,
+                    client.Session.NamespaceUris,
+                    typeModel);
+
+                if (!selection.IsSuccess)
+                {
+                    logger.LogError("{Message}", selection.ErrorMessage);
+                    return selection.Status switch
+                    {
+                        TypeDefinitionSelectionStatus.InvalidTypeId => 10,
+                        TypeDefinitionSelectionStatus.TypeNotFound => 3,
+                        _ => 1
+                    };
+                }
+
+                validationNodes = selection.Nodes;
+                logger.LogInformation(
+                    "Selected {Count} instance(s) of {TargetType} or its subtypes for validation.",
+                    validationNodes.Count,
+                    parsedTargetTypeId);
+            }
 
             // Auto-discover and run validation rules. Config-disabled rules are excluded alongside
             // any --exclude-rule values.
@@ -484,7 +537,7 @@ public class CheckCommand : RootCommand
                 excludedRuleIds.Length > 0 ? $" ({excludedRuleIds.Length} excluded: {string.Join(", ", excludedRuleIds)})" : string.Empty);
 
             var engine = new ValidationEngine(registry, typeModel, loggerFactory.CreateLogger<ValidationEngine>());
-            var report = await engine.RunAsync(snapshot.Nodes, client.Session, cancellationToken).ConfigureAwait(false);
+            var report = await engine.RunAsync(validationNodes, client.Session, cancellationToken).ConfigureAwait(false);
 
             // Apply configured per-rule severity overrides and BrowsePath suppression before the
             // severity threshold is applied.

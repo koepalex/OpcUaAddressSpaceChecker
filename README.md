@@ -48,6 +48,12 @@ Use explicit NodeSet2 files as the type-model override:
 opcua-check-address-space --endpoint opc.tcp://host:port --nodeset .\MyModel.NodeSet2.xml --nodeset-dir .\nodesets
 ```
 
+Validate only instances of a selected type or its subtypes:
+
+```powershell
+opcua-check-address-space --endpoint opc.tcp://host:port --type "nsu=http://opcfoundation.org/UA/Pumps/;i=1052"
+```
+
 ## Options
 
 | Option                         | Description                                                                                         | Default                                                  |
@@ -64,6 +70,7 @@ opcua-check-address-space --endpoint opc.tcp://host:port --nodeset .\MyModel.Nod
 | `--certificate-from-stdin`     | Read a base64-encoded PFX certificate from stdin.                                                    | `false`                                                  |
 | `--nodeset`                    | Optional NodeSet2 XML file to load as the type-model override instead of the live server types. May be specified multiple times. | Empty; live type model is used                           |
 | `--nodeset-dir`                | Optional directory searched for companion NodeSet2 XML files when `--nodeset` is supplied. May be specified multiple times. | Empty                                                    |
+| `--type`                       | Optional ObjectType or VariableType ExpandedNodeId. Validates only instances of that type or its subtypes. Prefer the namespace-URI form (`nsu=...`) because namespace indexes are server-specific. | Empty; all browsed nodes are validated                   |
 | `--output-format`              | Output format: `console`, `json`, `sarif`, `markdown`.                                              | `console`                                                |
 | `--output`, `-o`               | Optional output file path. Console output writes to stdout when omitted.                             | Omitted; writes to stdout                                |
 | `--severity-threshold`         | Minimum severity included in results: `information`, `warning`, `error`.                            | `warning`                                                |
@@ -79,10 +86,10 @@ opcua-check-address-space --endpoint opc.tcp://host:port --nodeset .\MyModel.Nod
 | Exit code | Meaning                                                                                   |
 |-----------|-------------------------------------------------------------------------------------------|
 | `0`       | Validation completed and no findings met the configured severity threshold.                |
-| `1`       | Validation findings met the configured severity threshold, stdin input was missing, or an unexpected runtime error occurred. |
+| `1`       | Validation findings met the configured severity threshold, no instances matched `--type`, stdin input was missing, or an unexpected runtime error occurred. |
 | `2`       | The checker could not connect to the OPC UA server.                                        |
-| `3`       | NodeSet2 type-model loading failed.                                                       |
-| `10`      | Command validation failed, such as missing endpoint, invalid output format, invalid severity threshold, or missing authentication material. |
+| `3`       | NodeSet2 type-model loading failed or the requested `--type` was unavailable in the selected type model. |
+| `10`      | Command validation failed, such as a malformed `--type`, missing endpoint, invalid output format, invalid severity threshold, or missing authentication material. |
 | `130`     | Operation was cancelled.                                                                  |
 
 ## Rules catalog

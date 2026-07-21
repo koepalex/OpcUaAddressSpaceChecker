@@ -78,6 +78,37 @@ public sealed class NodesetModelIndex
     public bool TryGetType(NodeId typeId, out NodeState? typeNode) =>
         _typesById.TryGetValue(typeId, out typeNode);
 
+    public bool TryResolveTypeId(ExpandedNodeId expandedTypeId, out NodeId modelTypeId)
+    {
+        ArgumentNullException.ThrowIfNull(expandedTypeId);
+
+        modelTypeId = ExpandedNodeId.ToNodeId(expandedTypeId, _namespaceUris) ?? NodeId.Null;
+        return !NodeId.IsNull(modelTypeId) && _typesById.ContainsKey(modelTypeId);
+    }
+
+    public bool TryMapTypeId(
+        NodeId sourceTypeId,
+        NamespaceTable sourceNamespaceUris,
+        out NodeId modelTypeId)
+    {
+        ArgumentNullException.ThrowIfNull(sourceTypeId);
+        ArgumentNullException.ThrowIfNull(sourceNamespaceUris);
+
+        modelTypeId = NodeId.Null;
+        if (NodeId.IsNull(sourceTypeId))
+        {
+            return false;
+        }
+
+        var namespaceUri = sourceNamespaceUris.GetString(sourceTypeId.NamespaceIndex);
+        if (string.IsNullOrEmpty(namespaceUri))
+        {
+            return false;
+        }
+
+        return TryResolveTypeId(new ExpandedNodeId(sourceTypeId, namespaceUri), out modelTypeId);
+    }
+
     public bool TryGetTypeDefinition(NodeId instanceId, out NodeState? typeDefinition)
     {
         typeDefinition = null;
