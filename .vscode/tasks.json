@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build Aspire AppHost",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}\\tests\\OpcUaAddressSpaceChecker.AppHost\\OpcUaAddressSpaceChecker.AppHost.csproj",
+        "--configuration",
+        "Debug"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}
