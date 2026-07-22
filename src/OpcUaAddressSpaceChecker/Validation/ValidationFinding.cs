@@ -10,4 +10,5 @@ public sealed record ValidationFinding(
     string Message,
     string? Details = null,
     string? DeclaringTypeNamespaceUri = null,
-    string? DeclaringTypeReferenceUrl = null);
+    string? DeclaringTypeReferenceUrl = null,
+    FindingConfidence Confidence = FindingConfidence.Confirmed);

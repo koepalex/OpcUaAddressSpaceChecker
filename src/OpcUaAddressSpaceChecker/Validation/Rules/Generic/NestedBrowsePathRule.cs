@@ -43,52 +43,5 @@ public sealed class NestedBrowsePathRule : IValidationRule
             }
         }
 
-        foreach (var nestedDeclaration in nestedDeclarations.Where(GenericRuleHelpers.IsMandatory))
-        {
-            if (GenericRuleHelpers.IsSuppressedByMissingOptionalAncestor(context, node, nestedDeclaration, declarations) ||
-                GenericRuleHelpers.BrowsePathExists(context, node, declarations, nestedDeclaration.BrowsePath))
-            {
-                continue;
-            }
-
-            var declaringRef = GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, nestedDeclaration, declarations);
-
-            if (GenericRuleHelpers.CrossesPlaceholderAncestor(declarations, nestedDeclaration))
-            {
-                foreach (var (instance, suffix) in GenericRuleHelpers.FindPlaceholderInstancesMissingChild(context, node, declarations, nestedDeclaration))
-                {
-                    var instancePath = new List<QualifiedName> { instance.BrowseName };
-                    instancePath.AddRange(suffix);
-
-                    yield return new ValidationFinding(
-                        RuleId,
-                        Severity,
-                        instance.NodeId,
-                        GenericRuleHelpers.FormatBrowsePath(instancePath),
-                        "Nested mandatory child is missing below its declared parent.",
-                        $"Placeholder instance {GenericRuleHelpers.FormatBrowseName(instance.BrowseName)} exists, but {GenericRuleHelpers.FormatBrowseName(nestedDeclaration.BrowseName)} is absent below it.",
-                        declaringRef.NamespaceUri,
-                        declaringRef.ReferenceUrl);
-                }
-
-                continue;
-            }
-
-            var parentPath = nestedDeclaration.BrowsePath.Take(nestedDeclaration.BrowsePath.Count - 1).ToArray();
-            if (!GenericRuleHelpers.BrowsePathExists(context, node, declarations, parentPath))
-            {
-                continue;
-            }
-
-            yield return new ValidationFinding(
-                RuleId,
-                Severity,
-                node.NodeId,
-                GenericRuleHelpers.FormatBrowsePath(nestedDeclaration.BrowsePath),
-                "Nested mandatory child is missing below its declared parent.",
-                $"Parent path {GenericRuleHelpers.FormatBrowsePath(parentPath)} exists, but {GenericRuleHelpers.FormatBrowseName(nestedDeclaration.BrowseName)} is absent below it.",
-                declaringRef.NamespaceUri,
-                declaringRef.ReferenceUrl);
-        }
     }
 }

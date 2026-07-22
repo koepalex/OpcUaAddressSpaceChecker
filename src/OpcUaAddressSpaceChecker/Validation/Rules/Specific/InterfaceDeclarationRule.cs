@@ -52,7 +52,8 @@ public sealed class InterfaceDeclarationRule : IValidationRule
                     node.NodeId,
                     $"{CompanionSpecRuleHelpers.FormatNode(node)}/{CompanionSpecRuleHelpers.FormatBrowsePath(declaration.BrowsePath)}",
                     $"DI DeviceType instance does not satisfy mandatory interface declaration '{declaration.BrowseName.Name}'.",
-                    $"Missing mandatory HasInterface-derived declaration path {CompanionSpecRuleHelpers.FormatBrowsePath(declaration.BrowsePath)}.");
+                    $"Missing mandatory HasInterface-derived declaration path {CompanionSpecRuleHelpers.FormatBrowsePath(declaration.BrowsePath)}.",
+                    Confidence: context.AbsenceConfidence);
             }
             else
             {
@@ -62,7 +63,8 @@ public sealed class InterfaceDeclarationRule : IValidationRule
                     node.NodeId,
                     $"{CompanionSpecRuleHelpers.FormatNode(node)}/{CompanionSpecRuleHelpers.FormatBrowsePath(declaration.BrowsePath)}",
                     $"Optional interface member '{declaration.BrowseName.Name}' is not implemented.",
-                    $"Optional HasInterface-derived declaration path {CompanionSpecRuleHelpers.FormatBrowsePath(declaration.BrowsePath)} is not materialized (conformant; implement only if the device exposes this metadata).");
+                    $"Optional HasInterface-derived declaration path {CompanionSpecRuleHelpers.FormatBrowsePath(declaration.BrowsePath)} is not materialized (conformant; implement only if the device exposes this metadata).",
+                    Confidence: context.AbsenceConfidence);
             }
         }
     }

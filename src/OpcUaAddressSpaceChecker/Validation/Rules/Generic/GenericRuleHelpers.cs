@@ -234,6 +234,32 @@ internal static class GenericRuleHelpers
         return false;
     }
 
+    internal static bool IsSuppressedByMissingRequiredAncestor(
+        ValidationContext context,
+        LiveNode node,
+        InstanceDeclaration declaration,
+        IReadOnlyList<InstanceDeclaration> declarations)
+    {
+        for (var depth = 1; depth < declaration.BrowsePath.Count; depth++)
+        {
+            var prefix = declaration.BrowsePath.Take(depth).ToArray();
+            var ancestorDeclaration = declarations.FirstOrDefault(candidate =>
+                BrowsePathEquals(candidate.BrowsePath, prefix));
+            if (ancestorDeclaration == null ||
+                (!IsMandatory(ancestorDeclaration) && !IsMandatoryPlaceholder(ancestorDeclaration)))
+            {
+                continue;
+            }
+
+            if (!BrowsePathExists(context, node, declarations, prefix))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     internal static bool BrowseNameEquals(QualifiedName left, QualifiedName right) =>
         left.NamespaceIndex == right.NamespaceIndex &&
         string.Equals(left.Name, right.Name, StringComparison.Ordinal);

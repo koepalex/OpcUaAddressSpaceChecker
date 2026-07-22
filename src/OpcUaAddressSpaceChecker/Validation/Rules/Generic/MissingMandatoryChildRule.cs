@@ -18,7 +18,8 @@ public sealed class MissingMandatoryChildRule : IValidationRule
         var declarations = context.GetInstanceDeclarations(node);
         foreach (var declaration in declarations.Where(GenericRuleHelpers.IsMandatory))
         {
-            if (GenericRuleHelpers.IsSuppressedByMissingOptionalAncestor(context, node, declaration, declarations))
+            if (GenericRuleHelpers.IsSuppressedByMissingOptionalAncestor(context, node, declaration, declarations) ||
+                GenericRuleHelpers.IsSuppressedByMissingRequiredAncestor(context, node, declaration, declarations))
             {
                 continue;
             }
@@ -40,7 +41,8 @@ public sealed class MissingMandatoryChildRule : IValidationRule
                         "Mandatory child is missing.",
                         $"Placeholder instance {GenericRuleHelpers.FormatBrowseName(instance.BrowseName)} is missing {GenericRuleHelpers.FormatBrowseName(declaration.BrowseName)} with NodeClass {declaration.NodeClass}.",
                         declaringRef.NamespaceUri,
-                        declaringRef.ReferenceUrl);
+                        declaringRef.ReferenceUrl,
+                        context.AbsenceConfidence);
                 }
 
                 continue;
@@ -59,7 +61,8 @@ public sealed class MissingMandatoryChildRule : IValidationRule
                 "Mandatory child is missing.",
                 $"Expected declaration {GenericRuleHelpers.FormatBrowseName(declaration.BrowseName)} with NodeClass {declaration.NodeClass}.",
                 declaringRef.NamespaceUri,
-                declaringRef.ReferenceUrl);
+                declaringRef.ReferenceUrl,
+                context.AbsenceConfidence);
         }
     }
 }

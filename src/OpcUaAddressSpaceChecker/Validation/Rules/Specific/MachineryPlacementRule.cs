@@ -42,7 +42,8 @@ public sealed class MachineryPlacementRule : IValidationRule
                 node.NodeId,
                 CompanionSpecRuleHelpers.FormatNode(node),
                 "Machinery machine instance is not reachable from the Machines entry point by hierarchical references.",
-                $"Expected reachability from {entry.EntryPointModelUri}#{entry.EntryPointBrowseName}.");
+                $"Expected reachability from {entry.EntryPointModelUri}#{entry.EntryPointBrowseName}.",
+                Confidence: context.AbsenceConfidence);
         }
     }
 }

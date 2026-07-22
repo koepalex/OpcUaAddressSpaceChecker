@@ -25,7 +25,8 @@ public sealed class ValidationEngine
     public Task<ValidationReport> RunAsync(
         IEnumerable<LiveNode> liveNodes,
         ISession session,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ValidationRunMetadata? runMetadata = null)
     {
         ArgumentNullException.ThrowIfNull(liveNodes);
         ArgumentNullException.ThrowIfNull(session);
@@ -39,7 +40,7 @@ public sealed class ValidationEngine
             cancellationToken.ThrowIfCancellationRequested();
 
             var namespaceUri = ResolveNamespaceUri(session, liveNode.NodeId);
-            var context = new ValidationContext(_typeModel, session, namespaceUri, _logger);
+            var context = new ValidationContext(_typeModel, session, namespaceUri, _logger, runMetadata);
             var typeDefinition = ResolveTypeDefinition(liveNode);
 
             foreach (var rule in _registry.GetApplicableRules(liveNode, typeDefinition, context))
@@ -63,7 +64,10 @@ public sealed class ValidationEngine
         return Task.FromResult(new ValidationReport(
             nodes.Count,
             findings.Count,
-            findings.AsReadOnly()));
+            findings.AsReadOnly())
+        {
+            RunMetadata = runMetadata ?? ValidationRunMetadata.Default
+        });
     }
 
     private NodeState? ResolveTypeDefinition(LiveNode liveNode)

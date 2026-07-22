@@ -45,12 +45,14 @@ public sealed class MarkdownReporterTests
 
         Assert.Contains("# OPC UA Address Space Validation Report", output, StringComparison.Ordinal);
         Assert.Contains("**Nodes checked:** 42", output, StringComparison.Ordinal);
+        Assert.Contains("**Validation view:**", output, StringComparison.Ordinal);
+        Assert.Contains("Confidence", output, StringComparison.Ordinal);
 
         Assert.Contains("## [Devices (DI)](https://reference.opcfoundation.org/DI/docs/)", output, StringComparison.Ordinal);
         Assert.Contains("## [OPC UA Core](https://reference.opcfoundation.org/Core/docs/)", output, StringComparison.Ordinal);
 
         Assert.Contains(
-            "| BrowsePath | NodeId | Rule violated | Severity | Short description | How to solve | Evidence |",
+            "| BrowsePath | NodeId | Rule violated | Severity | Confidence | Short description | How to solve | Evidence |",
             output,
             StringComparison.Ordinal);
 
@@ -117,6 +119,10 @@ public sealed class MarkdownReporterTests
 
         Assert.Contains("[GEN-01](https://reference.opcfoundation.org/IA/docs/)", output, StringComparison.Ordinal);
         Assert.Contains("[GEN-01](https://reference.opcfoundation.org/specs/OPC-10000-3/6.4.4.4.1)", output, StringComparison.Ordinal);
+        Assert.Contains(
+            "## [Industrial Automation (IA)](https://reference.opcfoundation.org/IA/docs/)",
+            output,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -232,7 +238,7 @@ public sealed class MarkdownReporterTests
     }
 
     [Fact]
-    public void Report_places_information_findings_in_their_own_optional_section()
+    public void Report_places_information_findings_in_their_own_section()
     {
         var findings = new[]
         {
@@ -259,7 +265,7 @@ public sealed class MarkdownReporterTests
         var output = writer.ToString();
 
         var infoSectionIndex = output.IndexOf(
-            "## Optional members not implemented (informational)",
+            "## Informational and inconclusive findings",
             StringComparison.Ordinal);
         Assert.True(infoSectionIndex > 0, "Expected a dedicated informational section.");
 

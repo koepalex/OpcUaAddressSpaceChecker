@@ -38,12 +38,26 @@ public sealed class JsonReporter : IReporter
                     information = report.InformationCount,
                     warning = report.WarningCount,
                     error = report.ErrorCount
+                },
+                byConfidence = new
+                {
+                    confirmed = report.ConfirmedCount,
+                    inconclusive = report.InconclusiveCount
+                },
+                validationView = new
+                {
+                    authenticationMode = report.RunMetadata.AuthenticationMode.ToString(),
+                    requestedCompleteness = report.RunMetadata.RequestedViewCompleteness.ToString(),
+                    effectiveState = report.RunMetadata.EffectiveViewState.ToString(),
+                    basis = report.RunMetadata.ViewStateBasis,
+                    accessDeniedCount = report.RunMetadata.AccessDeniedCount
                 }
             },
             findings = report.Findings.Select(finding => new
             {
                 ruleId = finding.RuleId,
                 severity = FormatSeverity(finding.Severity),
+                confidence = finding.Confidence.ToString().ToLowerInvariant(),
                 nodeId = FormatNodeId(finding.NodeId),
                 browseName = _nodeIdFormatter?.TryGetBrowseName(finding.NodeId),
                 browsePath = finding.BrowsePath,

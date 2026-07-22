@@ -61,7 +61,7 @@ public sealed class LockStructureRule : IValidationRule
 
                 if (!found)
                 {
-                    yield return MissingLockMember(node, lockLink.Child, propertyName, "property");
+                    yield return MissingLockMember(node, lockLink.Child, propertyName, "property", context.AbsenceConfidence);
                 }
             }
 
@@ -81,18 +81,24 @@ public sealed class LockStructureRule : IValidationRule
 
                 if (!found)
                 {
-                    yield return MissingLockMember(node, lockLink.Child, methodName, "method");
+                    yield return MissingLockMember(node, lockLink.Child, methodName, "method", context.AbsenceConfidence);
                 }
             }
         }
     }
 
-    private ValidationFinding MissingLockMember(LiveNode parent, LiveNode lockNode, string memberName, string memberKind) =>
+    private ValidationFinding MissingLockMember(
+        LiveNode parent,
+        LiveNode lockNode,
+        string memberName,
+        string memberKind,
+        FindingConfidence confidence) =>
         new(
             RuleId,
             Severity.Error,
             lockNode.NodeId,
             $"{CompanionSpecRuleHelpers.FormatNode(parent)}/Lock/{memberName}",
             $"DI Lock object is missing mandatory {memberKind} '{memberName}'.",
-            "The optional Lock object follows the DI LockingServicesType structure when present.");
+            "The optional Lock object follows the DI LockingServicesType structure when present.",
+            Confidence: confidence);
 }

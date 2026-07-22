@@ -47,7 +47,8 @@ public sealed class ParameterSetMandatoryPlaceholderRule : IValidationRule
                     parameterSet.Child.NodeId,
                     $"{CompanionSpecRuleHelpers.FormatNode(node)}/ParameterSet",
                     "DI ParameterSet is present but does not contain any parameter Variable child.",
-                    "TopologyElementType declares a MandatoryPlaceholder parameter under ParameterSet.");
+                    "TopologyElementType declares a MandatoryPlaceholder parameter under ParameterSet.",
+                    Confidence: context.AbsenceConfidence);
             }
         }
 
@@ -72,7 +73,8 @@ public sealed class ParameterSetMandatoryPlaceholderRule : IValidationRule
                     methodSet.Child.NodeId,
                     $"{CompanionSpecRuleHelpers.FormatNode(node)}/MethodSet",
                     "DI MethodSet is present but does not contain any Method child.",
-                    "MethodSet is expected to group Methods exposed by the TopologyElementType instance.");
+                    "MethodSet is expected to group Methods exposed by the TopologyElementType instance.",
+                    Confidence: context.AbsenceConfidence);
             }
         }
     }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Opc.Ua;
 using OpcUaAddressSpaceChecker.OpcUa;
 using OpcUaAddressSpaceChecker.Validation;
+using OpcUaAddressSpaceChecker.Validation.Rules.Generic;
 
 namespace OpcUaAddressSpaceChecker.Tests.Validation;
 
@@ -30,6 +31,28 @@ public sealed class ValidationEngineTests(NodesetTestFixture fixture) : IClassFi
         Assert.Equal(2, report.Findings.Count);
         Assert.Single(report.Findings, finding => finding.Details == "Same details");
         Assert.Single(report.Findings, finding => finding.Details == "Different details");
+    }
+
+    [Fact]
+    public async Task RunAsync_marks_absence_findings_inconclusive_for_restricted_view()
+    {
+        var deviceType = fixture.FindType(NodesetTestFixture.DiModelUri, "DeviceType");
+        var node = LiveNodeFactory.Object(
+            new QualifiedName("Device", fixture.NamespaceIndex(NodesetTestFixture.DiModelUri)),
+            deviceType.NodeId);
+        var registry = new RuleRegistry();
+        registry.Register(new MissingMandatoryChildRule());
+        var engine = new ValidationEngine(registry, fixture.Model, NullLogger<ValidationEngine>.Instance);
+        var metadata = ValidationViewPolicy.Evaluate(
+            AuthenticationMode.Anonymous,
+            ViewCompletenessRequest.Auto,
+            accessDeniedCount: 0);
+
+        var report = await engine.RunAsync([node], fixture.Session, runMetadata: metadata);
+
+        Assert.NotEmpty(report.Findings);
+        Assert.All(report.Findings, finding => Assert.Equal(FindingConfidence.Inconclusive, finding.Confidence));
+        Assert.Equal(report.TotalFindings, report.InconclusiveCount);
     }
 
     private sealed class StubRule(string ruleId, NodeId nodeId, ValidationFinding duplicated, ValidationFinding distinct)

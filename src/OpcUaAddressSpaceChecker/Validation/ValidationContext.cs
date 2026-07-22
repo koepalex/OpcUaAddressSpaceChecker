@@ -12,18 +12,22 @@ public sealed class ValidationContext
         NodesetModelIndex typeModel,
         ISession liveSession,
         string namespaceUri,
-        ILogger logger)
+        ILogger logger,
+        ValidationRunMetadata? runMetadata = null)
     {
         TypeModel = typeModel ?? throw new ArgumentNullException(nameof(typeModel));
         LiveSession = liveSession ?? throw new ArgumentNullException(nameof(liveSession));
         NamespaceUri = namespaceUri ?? string.Empty;
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        RunMetadata = runMetadata ?? ValidationRunMetadata.Default;
     }
 
     public NodesetModelIndex TypeModel { get; }
     public ISession LiveSession { get; }
     public string NamespaceUri { get; }
     public ILogger Logger { get; }
+    public ValidationRunMetadata RunMetadata { get; }
+    public FindingConfidence AbsenceConfidence => RunMetadata.AbsenceConfidence;
 
     public string ResolveNamespaceUri(NodeId nodeId) =>
         ResolveNamespaceUri(nodeId.NamespaceIndex);

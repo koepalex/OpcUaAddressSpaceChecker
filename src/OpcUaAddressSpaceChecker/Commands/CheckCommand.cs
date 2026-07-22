@@ -18,6 +18,7 @@ public class CheckCommand : RootCommand
 {
     private static readonly string[] OutputFormats = ["console", "json", "sarif", "markdown"];
     private static readonly string[] SeverityThresholds = ["information", "warning", "error"];
+    private static readonly string[] ViewCompletenessValues = ["auto", "complete", "restricted"];
 
     public CheckCommand() : base("Checks an OPC UA server address space against NodeSet2 type models.")
     {
@@ -147,6 +148,27 @@ public class CheckCommand : RootCommand
             DefaultValueFactory = (_) => "warning"
         };
 
+        var viewCompletenessOption = new Option<string>(
+            name: "--view-completeness")
+        {
+            Description = "Validation-view policy: auto, complete, restricted",
+            DefaultValueFactory = (_) => "auto"
+        };
+
+        var requireCompleteViewOption = new Option<bool>(
+            name: "--require-complete-view")
+        {
+            Description = "Fail before validation unless the effective validation view is complete",
+            DefaultValueFactory = (_) => false
+        };
+
+        var strictTypeCoverageOption = new Option<bool>(
+            name: "--strict-type-coverage")
+        {
+            Description = "Promote undeclared instance-specific children (GEN-05) from Information to Warning",
+            DefaultValueFactory = (_) => false
+        };
+
         var ruleIdOption = new Option<string[]>(
             name: "--rule-id")
         {
@@ -207,6 +229,9 @@ public class CheckCommand : RootCommand
         Options.Add(outputFormatOption);
         Options.Add(outputOption);
         Options.Add(severityThresholdOption);
+        Options.Add(viewCompletenessOption);
+        Options.Add(requireCompleteViewOption);
+        Options.Add(strictTypeCoverageOption);
         Options.Add(ruleIdOption);
         Options.Add(excludeRuleOption);
         Options.Add(retryCountOption);
@@ -233,6 +258,9 @@ public class CheckCommand : RootCommand
             var outputFormat = parseResult.GetValue(outputFormatOption)!;
             var output = parseResult.GetValue(outputOption);
             var severityThreshold = parseResult.GetValue(severityThresholdOption)!;
+            var viewCompleteness = parseResult.GetValue(viewCompletenessOption)!;
+            var requireCompleteView = parseResult.GetValue(requireCompleteViewOption);
+            var strictTypeCoverage = parseResult.GetValue(strictTypeCoverageOption);
             var ruleIds = parseResult.GetValue(ruleIdOption) ?? [];
             var excludeRules = parseResult.GetValue(excludeRuleOption) ?? [];
             var retryCount = parseResult.GetValue(retryCountOption);
@@ -258,6 +286,9 @@ public class CheckCommand : RootCommand
                 outputFormat,
                 output,
                 severityThreshold,
+                viewCompleteness,
+                requireCompleteView,
+                strictTypeCoverage,
                 ruleIds,
                 excludeRules,
                 retryCount,
@@ -286,6 +317,9 @@ public class CheckCommand : RootCommand
         string outputFormat,
         string? output,
         string severityThreshold,
+        string viewCompleteness,
+        bool requireCompleteView,
+        bool strictTypeCoverage,
         string[] ruleIds,
         string[] excludeRules,
         int retryCount,
@@ -328,6 +362,15 @@ public class CheckCommand : RootCommand
             if (!IsOneOf(severityThreshold, SeverityThresholds))
             {
                 logger.LogError("Invalid severity threshold: {SeverityThreshold}. Valid values: information, warning, error", severityThreshold);
+                return 10;
+            }
+
+            if (!ValidationViewPolicy.TryParse(viewCompleteness, out var viewCompletenessRequest))
+            {
+                logger.LogError(
+                    "Invalid view completeness: {ViewCompleteness}. Valid values: {Values}",
+                    viewCompleteness,
+                    string.Join(", ", ViewCompletenessValues));
                 return 10;
             }
 
@@ -380,6 +423,9 @@ public class CheckCommand : RootCommand
                 OutputFormat = outputFormat,
                 OutputPath = output,
                 SeverityThreshold = severityThreshold,
+                ViewCompleteness = viewCompleteness,
+                RequireCompleteView = requireCompleteView,
+                StrictTypeCoverage = strictTypeCoverage,
                 IncludeRuleIds = ruleIds,
                 ExcludeRuleIds = excludeRules,
                 ConfigPath = configPath,
@@ -412,6 +458,7 @@ public class CheckCommand : RootCommand
                 useNodesetOverride ? "NodeSet2 files (override)" : "live server Types folder (i=86)");
             logger.LogInformation("Output format: {OutputFormat}", options.OutputFormat);
             logger.LogInformation("Severity threshold: {SeverityThreshold}", options.SeverityThreshold);
+            logger.LogInformation("Validation-view policy: {ViewCompleteness}", options.ViewCompleteness);
             if (parsedTargetTypeId != null)
             {
                 logger.LogInformation("Target type: {TargetType} (including subtypes)", parsedTargetTypeId);
@@ -526,6 +573,29 @@ public class CheckCommand : RootCommand
                     parsedTargetTypeId);
             }
 
+            var scopedBrowseAccessDeniedCount = CountBrowseAccessDenied(
+                validationNodes,
+                snapshot.BrowsePathsByNodeId,
+                config);
+            var runMetadata = ValidationViewPolicy.Evaluate(
+                options.AuthMode,
+                viewCompletenessRequest,
+                scopedBrowseAccessDeniedCount);
+            logger.LogInformation(
+                "Validation view: authentication={AuthenticationMode}, requested={Requested}, effective={Effective}. {Basis}",
+                runMetadata.AuthenticationMode,
+                runMetadata.RequestedViewCompleteness,
+                runMetadata.EffectiveViewState,
+                runMetadata.ViewStateBasis);
+
+            if (options.RequireCompleteView && !runMetadata.HasCompleteView)
+            {
+                logger.LogError(
+                    "A complete validation view is required, but the effective state is {EffectiveViewState}.",
+                    runMetadata.EffectiveViewState);
+                return 4;
+            }
+
             // Auto-discover and run validation rules. Config-disabled rules are excluded alongside
             // any --exclude-rule values.
             var excludedRuleIds = options.ExcludeRuleIds.Concat(config.GetDisabledRuleIds()).ToArray();
@@ -537,11 +607,33 @@ public class CheckCommand : RootCommand
                 excludedRuleIds.Length > 0 ? $" ({excludedRuleIds.Length} excluded: {string.Join(", ", excludedRuleIds)})" : string.Empty);
 
             var engine = new ValidationEngine(registry, typeModel, loggerFactory.CreateLogger<ValidationEngine>());
-            var report = await engine.RunAsync(validationNodes, client.Session, cancellationToken).ConfigureAwait(false);
+            var report = await engine.RunAsync(
+                validationNodes,
+                client.Session,
+                cancellationToken,
+                runMetadata).ConfigureAwait(false);
+
+            var rawFindings = report.Findings.ToList();
+            if (!runMetadata.HasCompleteView &&
+                IsRuleSelected("ACCESS-01", options.IncludeRuleIds, excludedRuleIds))
+            {
+                rawFindings.Insert(0, new ValidationFinding(
+                    "ACCESS-01",
+                    Severity.Information,
+                    ObjectIds.ObjectsFolder,
+                    "0:Objects",
+                    "The validation view may omit nodes or references.",
+                    runMetadata.ViewStateBasis,
+                    Confidence: FindingConfidence.Inconclusive));
+            }
 
             // Apply configured per-rule severity overrides and BrowsePath suppression before the
             // severity threshold is applied.
-            var configFiltered = FindingFilter.Apply(report.Findings, snapshot.BrowsePathsByNodeId, config);
+            var configFiltered = FindingFilter.Apply(
+                rawFindings,
+                snapshot.BrowsePathsByNodeId,
+                config,
+                options.StrictTypeCoverage);
             if (configFiltered.SuppressedCount > 0)
             {
                 logger.LogInformation(
@@ -554,16 +646,26 @@ public class CheckCommand : RootCommand
                 .Where(finding => finding.Severity >= severityThresholdValue)
                 .ToList();
 
+            var failingFindings = thresholdFindings
+                .Where(finding =>
+                    finding.Severity != Severity.Information &&
+                    finding.Confidence == FindingConfidence.Confirmed)
+                .ToList();
+
             // Informational findings (e.g. optional interface members that are not implemented) are
             // always surfaced in their own report section, independent of the severity threshold, and
             // never affect the exit code. When the threshold already includes Information they are
             // present in thresholdFindings, so only add the remainder to avoid duplicates.
-            var reportFindings = severityThresholdValue <= Severity.Information
-                ? thresholdFindings
-                : thresholdFindings
-                    .Concat(configFiltered.Findings.Where(finding => finding.Severity == Severity.Information))
-                    .ToList();
-            var outputReport = new ValidationReport(report.TotalNodes, reportFindings.Count, reportFindings);
+            var reportFindings = thresholdFindings
+                .Concat(configFiltered.Findings.Where(finding =>
+                    finding.Severity == Severity.Information ||
+                    finding.Confidence == FindingConfidence.Inconclusive))
+                .Distinct()
+                .ToList();
+            var outputReport = new ValidationReport(report.TotalNodes, reportFindings.Count, reportFindings)
+            {
+                RunMetadata = runMetadata
+            };
 
             // Select the reporter and render the report to a file or stdout.
             var namespaceSnapshot = BuildNamespaceSnapshot(client.Session.NamespaceUris);
@@ -608,17 +710,19 @@ public class CheckCommand : RootCommand
             }
 
             logger.LogInformation(
-                "Validation complete: {Nodes} nodes checked, {Findings} finding(s) at or above '{Threshold}' (errors={Errors}, warnings={Warnings}, info={Info}).",
+                "Validation complete: {Nodes} nodes checked, {Findings} reported, {Failing} confirmed finding(s) at or above '{Threshold}' (errors={Errors}, warnings={Warnings}, info={Info}, inconclusive={Inconclusive}).",
                 report.TotalNodes,
-                thresholdFindings.Count,
+                outputReport.TotalFindings,
+                failingFindings.Count,
                 severityThreshold,
                 outputReport.ErrorCount,
                 outputReport.WarningCount,
-                outputReport.InformationCount);
+                outputReport.InformationCount,
+                outputReport.InconclusiveCount);
 
             // Informational findings never fail the run; the exit code reflects only findings at or
             // above the configured severity threshold.
-            return thresholdFindings.Count > 0 ? 1 : 0;
+            return failingFindings.Count > 0 ? 1 : 0;
         }
         catch (OperationCanceledException)
         {
@@ -639,6 +743,46 @@ public class CheckCommand : RootCommand
 
     private static bool IsOneOf(string value, IReadOnlyCollection<string> allowedValues) =>
         allowedValues.Contains(value, StringComparer.OrdinalIgnoreCase);
+
+    internal static bool IsRuleSelected(
+        string ruleId,
+        IReadOnlyCollection<string> includedRuleIds,
+        IReadOnlyCollection<string> excludedRuleIds) =>
+        (includedRuleIds.Count == 0 || includedRuleIds.Contains(ruleId, StringComparer.OrdinalIgnoreCase)) &&
+        !excludedRuleIds.Contains(ruleId, StringComparer.OrdinalIgnoreCase);
+
+    internal static int CountBrowseAccessDenied(
+        IEnumerable<LiveNode> validationRoots,
+        IReadOnlyDictionary<NodeId, string> browsePathsByNodeId,
+        CheckerConfig config)
+    {
+        var count = 0;
+        var visited = new HashSet<NodeId>();
+        var pending = new Stack<LiveNode>(validationRoots);
+
+        while (pending.TryPop(out var node))
+        {
+            if (!visited.Add(node.NodeId))
+            {
+                continue;
+            }
+
+            var isSuppressed =
+                browsePathsByNodeId.TryGetValue(node.NodeId, out var browsePath) &&
+                config.IsSuppressed(browsePath);
+            if (!isSuppressed && node.BrowseStatusCode?.Code == StatusCodes.BadUserAccessDenied)
+            {
+                count++;
+            }
+
+            foreach (var child in node.Children)
+            {
+                pending.Push(child);
+            }
+        }
+
+        return count;
+    }
 
     private static string ApplyFormatExtension(string path, string format) => format.ToLowerInvariant() switch
     {

@@ -1,6 +1,7 @@
 using Opc.Ua;
 using OpcUaAddressSpaceChecker.NodeModel;
 using OpcUaAddressSpaceChecker.OpcUa;
+using OpcUaAddressSpaceChecker.Validation;
 using OpcUaAddressSpaceChecker.Validation.Rules.Generic;
 
 namespace OpcUaAddressSpaceChecker.Tests.Validation;
@@ -124,6 +125,146 @@ public sealed class GenericRuleTests(NodesetTestFixture fixture) : IClassFixture
     }
 
     [Fact]
+    public void Gen05_reports_legal_instance_extensions_as_information()
+    {
+        var serverCapabilitiesType = fixture.FindType(NodesetTestFixture.UaModelUri, "ServerCapabilitiesType");
+        var root = LiveNodeFactory.Object(
+            new QualifiedName("ServerCapabilities", 0),
+            serverCapabilitiesType.NodeId);
+        var diExtension = LiveNodeFactory.Variable(
+            new QualifiedName("MaxInactiveLockTime", fixture.NamespaceIndex(NodesetTestFixture.DiModelUri)),
+            VariableTypeIds.BaseDataVariableType,
+            DataTypeIds.Duration,
+            -1);
+        var applicationExtension = LiveNodeFactory.Variable(
+            new QualifiedName("VendorProperty", 42),
+            VariableTypeIds.PropertyType,
+            DataTypeIds.String,
+            -1,
+            nodeNamespaceIndex: 42);
+        LiveNodeFactory.AddChild(root, diExtension, ReferenceTypeIds.HasProperty);
+        LiveNodeFactory.AddChild(root, applicationExtension, ReferenceTypeIds.HasProperty);
+
+        var findings = new UnexpectedChildRule().Validate(root, serverCapabilitiesType, fixture.Context).ToArray();
+
+        Assert.Equal(2, findings.Length);
+        Assert.All(findings, finding => Assert.Equal(Severity.Information, finding.Severity));
+        Assert.Contains(findings, finding => finding.NodeId == diExtension.NodeId);
+        Assert.Contains(findings, finding => finding.NodeId == applicationExtension.NodeId);
+        Assert.All(findings, finding =>
+            Assert.Contains("Additional instance References are permitted", finding.Details, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Gen05_keeps_misplaced_nested_child_advisory_while_gen09_confirms_structure_error()
+    {
+        var pumpType = fixture.FindType(NodesetTestFixture.PumpsModelUri, "PumpType");
+        var declaration = fixture.Declaration(
+            pumpType.NodeId,
+            "Configuration",
+            "SystemRequirements",
+            "CompressionRatio");
+        var root = LiveNodeFactory.Object(
+            new QualifiedName("Pump", fixture.NamespaceIndex(NodesetTestFixture.PumpsModelUri)),
+            pumpType.NodeId);
+        var misplaced = LiveNodeFactory.Variable(
+            declaration.BrowseName,
+            declaration.TypeDefinitionId,
+            DataTypeIds.Double,
+            -1);
+        LiveNodeFactory.AddChild(root, misplaced, declaration.ReferenceTypeId);
+
+        var gen05 = Assert.Single(new UnexpectedChildRule().Validate(root, pumpType, fixture.Context));
+        var gen09 = Assert.Single(new NestedBrowsePathRule().Validate(root, pumpType, fixture.Context));
+
+        Assert.Equal(Severity.Information, gen05.Severity);
+        Assert.Equal(FindingConfidence.Confirmed, gen09.Confidence);
+    }
+
+    [Fact]
+    public void Gen07_assigns_alias_children_across_sibling_placeholders()
+    {
+        var type = fixture.FindType(NodesetTestFixture.UaModelUri, "AliasNameCategoryType");
+        var aliasPlaceholder = fixture.Declaration(type.NodeId, "<Alias>");
+        var subcategoryPlaceholder = fixture.Declaration(type.NodeId, "<SubAliasNameCategories>");
+        var root = LiveNodeFactory.Object(new QualifiedName("Aliases", 0), type.NodeId);
+        var alias = LiveNodeFactory.Object(new QualifiedName("MotorAlias", 2), aliasPlaceholder.TypeDefinitionId);
+        var subcategory = LiveNodeFactory.Object(new QualifiedName("Motors", 2), subcategoryPlaceholder.TypeDefinitionId);
+        LiveNodeFactory.AddChild(root, alias, aliasPlaceholder.ReferenceTypeId);
+        LiveNodeFactory.AddChild(root, subcategory, subcategoryPlaceholder.ReferenceTypeId);
+
+        var findings = new OptionalPlaceholderConformanceRule().Validate(root, type, fixture.Context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void Gen07_emits_one_finding_for_one_plausible_incompatible_placeholder()
+    {
+        var type = fixture.FindType(NodesetTestFixture.UaModelUri, "AliasNameCategoryType");
+        var aliasPlaceholder = fixture.Declaration(type.NodeId, "<Alias>");
+        var root = LiveNodeFactory.Object(new QualifiedName("Aliases", 0), type.NodeId);
+        var alias = LiveNodeFactory.Object(new QualifiedName("MotorAlias", 2), aliasPlaceholder.TypeDefinitionId);
+        LiveNodeFactory.AddChild(root, alias, ReferenceTypeIds.HasComponent);
+
+        var finding = Assert.Single(new OptionalPlaceholderConformanceRule().Validate(root, type, fixture.Context));
+
+        Assert.Equal("GEN-07", finding.RuleId);
+        Assert.Contains("reference type", finding.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Gen07_does_not_apply_variable_placeholder_to_object_extension()
+    {
+        var type = fixture.FindType(NodesetTestFixture.UaModelUri, "ServerCapabilitiesType");
+        var vendorCapability = fixture.Declaration(type.NodeId, "<VendorCapability>");
+        Assert.Equal(NodeClass.Variable, vendorCapability.NodeClass);
+        var root = LiveNodeFactory.Object(new QualifiedName("ServerCapabilities", 0), type.NodeId);
+        LiveNodeFactory.AddChild(
+            root,
+            LiveNodeFactory.Object(new QualifiedName("VendorObject", 2), ObjectTypeIds.BaseObjectType),
+            vendorCapability.ReferenceTypeId);
+
+        var findings = new OptionalPlaceholderConformanceRule().Validate(root, type, fixture.Context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void Gen07_does_not_assign_unrelated_object_extension_by_reference_type_alone()
+    {
+        var deviceType = fixture.FindType(NodesetTestFixture.DiModelUri, "DeviceType");
+        var softwareUpdateType = fixture.FindType(NodesetTestFixture.DiModelUri, "SoftwareUpdateType");
+        var root = LiveNodeFactory.Object(
+            new QualifiedName("Device", fixture.NamespaceIndex(NodesetTestFixture.DiModelUri)),
+            deviceType.NodeId);
+        LiveNodeFactory.AddChild(
+            root,
+            LiveNodeFactory.Object(
+                new QualifiedName("SoftwareUpdate", fixture.NamespaceIndex(NodesetTestFixture.DiModelUri)),
+                softwareUpdateType.NodeId),
+            ReferenceTypeIds.HasComponent);
+
+        var findings = new OptionalPlaceholderConformanceRule().Validate(root, deviceType, fixture.Context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void Gen07_leaves_unrelated_extension_to_gen05()
+    {
+        var type = fixture.FindType(NodesetTestFixture.UaModelUri, "AliasNameCategoryType");
+        var root = LiveNodeFactory.Object(new QualifiedName("Aliases", 0), type.NodeId);
+        var extension = LiveNodeFactory.Object(
+            new QualifiedName("VendorObject", 2),
+            ObjectTypeIds.BaseObjectType);
+        LiveNodeFactory.AddChild(root, extension, ReferenceTypeIds.HasProperty);
+
+        Assert.Empty(new OptionalPlaceholderConformanceRule().Validate(root, type, fixture.Context));
+        Assert.Single(new UnexpectedChildRule().Validate(root, type, fixture.Context));
+    }
+
+    [Fact]
     public void Gen08_accepts_HasProperty_properties_on_a_FunctionalGroupType_subtype_instance()
     {
         // Regression for the removed DI-06 rule, which wrongly flagged HasProperty children of
@@ -211,6 +352,57 @@ public sealed class GenericRuleTests(NodesetTestFixture fixture) : IClassFixture
         Assert.NotEmpty(mandatoryDescendants);
         Assert.DoesNotContain(findings, finding => finding.BrowsePath.Contains('<'));
         Assert.DoesNotContain(findings, finding => finding.NodeId == instance.NodeId);
+    }
+
+    [Fact]
+    public void Gen01_suppresses_descendants_when_required_placeholder_ancestor_is_missing()
+    {
+        var type = fixture.FindType(NodesetTestFixture.MachineryModelUri, "MachineryLifetimeCounterType");
+        var declarations = fixture.Context.GetInstanceDeclarations(type.NodeId);
+        var placeholder = fixture.Declaration(type.NodeId, "<LifetimeVariable>");
+        var mandatoryDescendants = MandatoryDescendants(declarations, placeholder);
+        var root = LiveNodeFactory.Object(
+            new QualifiedName("Counter", fixture.NamespaceIndex(NodesetTestFixture.MachineryModelUri)),
+            type.NodeId);
+
+        var gen01 = new MissingMandatoryChildRule().Validate(root, type, fixture.Context).ToArray();
+        var gen06 = new MandatoryPlaceholderRule().Validate(root, type, fixture.Context).ToArray();
+
+        Assert.NotEmpty(mandatoryDescendants);
+        Assert.DoesNotContain(gen01, finding =>
+            mandatoryDescendants.Any(descendant =>
+                finding.BrowsePath.Contains(descendant.BrowseName.Name, StringComparison.Ordinal)));
+        Assert.Single(gen06, finding => finding.BrowsePath.Contains("<LifetimeVariable>", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Gen12_ignores_missing_method_but_reports_missing_arguments_on_present_method()
+    {
+        var type = fixture.FindType(NodesetTestFixture.DiModelUri, "LockingServicesType");
+        var methodDeclaration = fixture.Declaration(type.NodeId, "InitLock");
+        var root = LiveNodeFactory.Object(
+            new QualifiedName("Lock", fixture.NamespaceIndex(NodesetTestFixture.DiModelUri)),
+            type.NodeId);
+        var gen01 = new MissingMandatoryChildRule();
+        var gen12 = new MethodDeclarationRule();
+
+        Assert.Contains(gen01.Validate(root, type, fixture.Context), finding =>
+            finding.BrowsePath.Contains("InitLock", StringComparison.Ordinal));
+        Assert.Empty(gen12.Validate(root, type, fixture.Context));
+
+        var method = new LiveNode
+        {
+            NodeId = new NodeId(60_001u, methodDeclaration.BrowseName.NamespaceIndex),
+            BrowseName = methodDeclaration.BrowseName,
+            DisplayName = methodDeclaration.BrowseName.Name,
+            NodeClass = NodeClass.Method
+        };
+        LiveNodeFactory.AddChild(root, method, methodDeclaration.ReferenceTypeId);
+
+        var findings = gen12.Validate(root, type, fixture.Context).ToArray();
+
+        Assert.NotEmpty(findings);
+        Assert.All(findings, finding => Assert.Contains("Arguments", finding.BrowsePath, StringComparison.Ordinal));
     }
 
     [Fact]

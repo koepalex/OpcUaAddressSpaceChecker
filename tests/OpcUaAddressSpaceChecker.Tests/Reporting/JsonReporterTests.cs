@@ -1,6 +1,7 @@
 using Opc.Ua;
 using OpcUaAddressSpaceChecker.Reporting;
 using OpcUaAddressSpaceChecker.Validation;
+using OpcUaAddressSpaceChecker.OpcUa;
 
 namespace OpcUaAddressSpaceChecker.Tests.Reporting;
 
@@ -29,7 +30,13 @@ public sealed class JsonReporterTests
                 null)
         };
 
-        var report = new ValidationReport(2, findings.Length, findings);
+        var report = new ValidationReport(2, findings.Length, findings)
+        {
+            RunMetadata = ValidationViewPolicy.Evaluate(
+                AuthenticationMode.Anonymous,
+                ViewCompletenessRequest.Auto,
+                accessDeniedCount: 1)
+        };
         var writer = new StringWriter();
 
         new JsonReporter().Report(report, writer);
@@ -39,6 +46,9 @@ public sealed class JsonReporterTests
         Assert.Contains("\"referenceUrl\": \"https://reference.opcfoundation.org/IA/v101/docs/5.2.5\"", output, StringComparison.Ordinal);
         Assert.Contains("\"declaringTypeNamespaceUri\": \"http://opcfoundation.org/UA/IA/\"", output, StringComparison.Ordinal);
         Assert.Contains("\"declaringTypeReferenceUrl\": \"https://reference.opcfoundation.org/IA/v101/docs/5.2.5\"", output, StringComparison.Ordinal);
+        Assert.Contains("\"confidence\": \"confirmed\"", output, StringComparison.Ordinal);
+        Assert.Contains("\"effectiveState\": \"Restricted\"", output, StringComparison.Ordinal);
+        Assert.Contains("\"accessDeniedCount\": 1", output, StringComparison.Ordinal);
 
         // A finding without declaring-type metadata falls back to the per-rule link.
         Assert.Contains("\"referenceUrl\": \"https://reference.opcfoundation.org/specs/OPC-10000-3/6.4.1\"", output, StringComparison.Ordinal);

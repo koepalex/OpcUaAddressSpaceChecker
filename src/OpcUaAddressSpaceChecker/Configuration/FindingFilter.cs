@@ -26,7 +26,8 @@ public static class FindingFilter
     public static Result Apply(
         IEnumerable<ValidationFinding> findings,
         IReadOnlyDictionary<NodeId, string> browsePathsByNodeId,
-        CheckerConfig config)
+        CheckerConfig config,
+        bool strictTypeCoverage = false)
     {
         ArgumentNullException.ThrowIfNull(findings);
         ArgumentNullException.ThrowIfNull(browsePathsByNodeId);
@@ -43,7 +44,7 @@ public static class FindingFilter
                 continue;
             }
 
-            retained.Add(ApplySeverityOverride(finding, config));
+            retained.Add(ApplySeverityOverride(finding, config, strictTypeCoverage));
         }
 
         return new Result(retained, suppressed);
@@ -69,8 +70,22 @@ public static class FindingFilter
         return config.IsSuppressed(path);
     }
 
-    private static ValidationFinding ApplySeverityOverride(ValidationFinding finding, CheckerConfig config) =>
-        config.TryGetSeverityOverride(finding.RuleId, out var severity) && severity != finding.Severity
-            ? finding with { Severity = severity }
+    private static ValidationFinding ApplySeverityOverride(
+        ValidationFinding finding,
+        CheckerConfig config,
+        bool strictTypeCoverage)
+    {
+        if (config.TryGetSeverityOverride(finding.RuleId, out var configuredSeverity))
+        {
+            return configuredSeverity != finding.Severity
+                ? finding with { Severity = configuredSeverity }
+                : finding;
+        }
+
+        return strictTypeCoverage &&
+               string.Equals(finding.RuleId, "GEN-05", StringComparison.OrdinalIgnoreCase) &&
+               finding.Severity == Severity.Information
+            ? finding with { Severity = Severity.Warning }
             : finding;
+    }
 }

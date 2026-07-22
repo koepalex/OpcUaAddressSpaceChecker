@@ -57,7 +57,8 @@ public sealed class DeviceTypeMandatoryPropertiesRule : IValidationRule
                     node.NodeId,
                     $"{CompanionSpecRuleHelpers.FormatNode(node)}/{propertyName}",
                     $"DeviceType instance is missing mandatory DI property '{propertyName}'.",
-                    "OPC UA DI DeviceType requires Manufacturer, Model, HardwareRevision, SoftwareRevision, DeviceRevision, DeviceManual, SerialNumber, and RevisionCounter.");
+                    "OPC UA DI DeviceType requires Manufacturer, Model, HardwareRevision, SoftwareRevision, DeviceRevision, DeviceManual, SerialNumber, and RevisionCounter.",
+                    Confidence: context.AbsenceConfidence);
             }
         }
     }

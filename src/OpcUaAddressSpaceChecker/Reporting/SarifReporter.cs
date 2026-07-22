@@ -57,7 +57,10 @@ public sealed class SarifReporter : IReporter
             .Select(finding => new
             {
                 ruleId = finding.RuleId,
-                level = MapLevel(finding.Severity),
+                level = MapLevel(
+                    finding.Confidence == FindingConfidence.Inconclusive
+                        ? Severity.Information
+                        : finding.Severity),
                 message = new
                 {
                     text = finding.Message
@@ -85,6 +88,8 @@ public sealed class SarifReporter : IReporter
                 },
                 properties = new
                 {
+                    confidence = finding.Confidence.ToString().ToLowerInvariant(),
+                    originalSeverity = finding.Severity.ToString().ToLowerInvariant(),
                     details = finding.Details,
                     referenceUrl = FindingReferenceResolver.Resolve(finding),
                     declaringTypeNamespaceUri = finding.DeclaringTypeNamespaceUri,
@@ -105,7 +110,17 @@ public sealed class SarifReporter : IReporter
                     rules
                 }
             },
-            results
+            results,
+            properties = new
+            {
+                authenticationMode = report.RunMetadata.AuthenticationMode.ToString(),
+                requestedViewCompleteness = report.RunMetadata.RequestedViewCompleteness.ToString(),
+                effectiveViewState = report.RunMetadata.EffectiveViewState.ToString(),
+                viewStateBasis = report.RunMetadata.ViewStateBasis,
+                accessDeniedCount = report.RunMetadata.AccessDeniedCount,
+                confirmedFindings = report.ConfirmedCount,
+                inconclusiveFindings = report.InconclusiveCount
+            }
         };
 
         var root = new Dictionary<string, object?>
@@ -124,9 +139,12 @@ public sealed class SarifReporter : IReporter
 
         foreach (var finding in findings)
         {
-            if ((int)finding.Severity > (int)highestSeverity)
+            var effectiveSeverity = finding.Confidence == FindingConfidence.Inconclusive
+                ? Severity.Information
+                : finding.Severity;
+            if ((int)effectiveSeverity > (int)highestSeverity)
             {
-                highestSeverity = finding.Severity;
+                highestSeverity = effectiveSeverity;
             }
         }
 

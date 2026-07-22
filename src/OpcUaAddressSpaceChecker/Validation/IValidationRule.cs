@@ -12,3 +12,10 @@ public interface IValidationRule
     bool Applies(LiveNode node, NodeState? typeDefinition, ValidationContext context);
     IEnumerable<ValidationFinding> Validate(LiveNode node, NodeState? typeDefinition, ValidationContext context);
 }
+
+/// <summary>
+/// Marks a diagnostic that replaces normal conformance validation for the same node.
+/// </summary>
+public interface IExclusiveValidationRule : IValidationRule
+{
+}

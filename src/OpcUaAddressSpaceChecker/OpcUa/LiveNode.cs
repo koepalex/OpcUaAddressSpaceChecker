@@ -15,8 +15,15 @@ public sealed class LiveNode
     public NodeId? DataType { get; set; }
     public int? ValueRank { get; set; }
     public IReadOnlyList<uint> ArrayDimensions { get; set; } = [];
+    public StatusCode? BrowseStatusCode { get; set; }
+    public IReadOnlyDictionary<uint, StatusCode> AttributeStatusCodes { get; set; } =
+        new Dictionary<uint, StatusCode>();
     public List<LiveReference> ForwardHierarchicalReferences { get; } = [];
     public List<LiveNode> Children { get; } = [];
+
+    public bool HasStatusCode(uint statusCode) =>
+        BrowseStatusCode?.Code == statusCode ||
+        AttributeStatusCodes.Values.Any(status => status.Code == statusCode);
 }
 
 /// <summary>
@@ -36,4 +43,11 @@ public sealed record LiveReference(
 /// </summary>
 public sealed record AddressSpaceSnapshot(
     IReadOnlyCollection<LiveNode> Nodes,
-    IReadOnlyDictionary<NodeId, string> BrowsePathsByNodeId);
+    IReadOnlyDictionary<NodeId, string> BrowsePathsByNodeId)
+{
+    public int BrowseAccessDeniedCount =>
+        Nodes.Count(node => node.BrowseStatusCode?.Code == StatusCodes.BadUserAccessDenied);
+
+    public int BadNodeIdUnknownCount =>
+        Nodes.Count(node => node.HasStatusCode(StatusCodes.BadNodeIdUnknown));
+}

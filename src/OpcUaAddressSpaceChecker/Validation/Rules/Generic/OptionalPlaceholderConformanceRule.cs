@@ -17,15 +17,26 @@ public sealed class OptionalPlaceholderConformanceRule : IValidationRule
     public IEnumerable<ValidationFinding> Validate(LiveNode node, NodeState? typeDefinition, ValidationContext context)
     {
         var declarations = context.GetInstanceDeclarations(node);
-        foreach (var placeholder in declarations.Where(GenericRuleHelpers.IsOptionalPlaceholder))
+        var optionalPlaceholders = declarations
+            .Where(GenericRuleHelpers.IsOptionalPlaceholder)
+            .GroupBy(
+                placeholder => GenericRuleHelpers.FormatBrowsePath(
+                    placeholder.BrowsePath.Take(placeholder.BrowsePath.Count - 1).ToArray()),
+                StringComparer.Ordinal);
+
+        foreach (var placeholderGroup in optionalPlaceholders)
         {
-            IReadOnlyList<LiveNode> parentNodes = placeholder.BrowsePath.Count == 1
+            var placeholders = placeholderGroup.ToArray();
+            var representative = placeholders[0];
+            IReadOnlyList<LiveNode> parentNodes = representative.BrowsePath.Count == 1
                 ? [node]
-                : GenericRuleHelpers.ResolveParentLinks(context, node, declarations, placeholder.BrowsePath).Select(link => link.Child).ToArray();
+                : GenericRuleHelpers.ResolveParentLinks(context, node, declarations, representative.BrowsePath)
+                    .Select(link => link.Child)
+                    .ToArray();
+            var concreteSiblings = GetConcreteSiblings(declarations, representative).ToArray();
 
             foreach (var parent in parentNodes)
             {
-                var concreteSiblings = GetConcreteSiblings(declarations, placeholder).ToArray();
                 foreach (var child in GenericRuleHelpers.GetChildLinks(parent))
                 {
                     if (concreteSiblings.Any(declaration => GenericRuleHelpers.BrowseNameEquals(child.Child.BrowseName, declaration.BrowseName)))
@@ -33,29 +44,35 @@ public sealed class OptionalPlaceholderConformanceRule : IValidationRule
                         continue;
                     }
 
-                    var typeCompatible = GenericRuleHelpers.IsTypeCompatible(context, child.Child.TypeDefinitionId, placeholder.TypeDefinitionId);
-                    var referenceCompatible = GenericRuleHelpers.IsReferenceTypeCompatible(context, child.Reference.ReferenceTypeId, placeholder.ReferenceTypeId);
+                    var candidates = placeholders
+                        .Where(placeholder => placeholder.NodeClass == child.Child.NodeClass)
+                        .Select(placeholder => new PlaceholderCandidate(
+                            placeholder,
+                            GenericRuleHelpers.IsTypeCompatible(context, child.Child.TypeDefinitionId, placeholder.TypeDefinitionId),
+                            GenericRuleHelpers.IsReferenceTypeCompatible(context, child.Reference.ReferenceTypeId, placeholder.ReferenceTypeId)))
+                        .ToArray();
 
-                    if (typeCompatible && !referenceCompatible)
+                    if (candidates.Any(candidate => candidate.TypeCompatible && candidate.ReferenceCompatible))
                     {
-                        yield return new ValidationFinding(
-                            RuleId,
-                            Severity,
-                            child.Child.NodeId,
-                            GenericRuleHelpers.FormatBrowsePath(placeholder.BrowsePath),
-                            "OptionalPlaceholder child uses an incompatible reference type.",
-                            $"Expected {GenericRuleHelpers.FormatNode(context, placeholder.ReferenceTypeId)} or a subtype; actual {GenericRuleHelpers.FormatNode(context, child.Reference.ReferenceTypeId)}.");
+                        continue;
                     }
-                    else if (referenceCompatible && !typeCompatible)
+
+                    var plausible = candidates
+                        .Where(candidate => candidate.TypeCompatible && !candidate.ReferenceCompatible)
+                        .OrderBy(candidate => candidate.Declaration.BrowseName.Name, StringComparer.Ordinal)
+                        .FirstOrDefault();
+                    if (plausible == null)
                     {
-                        yield return new ValidationFinding(
-                            RuleId,
-                            Severity,
-                            child.Child.NodeId,
-                            GenericRuleHelpers.FormatBrowsePath(placeholder.BrowsePath),
-                            "OptionalPlaceholder child uses an incompatible TypeDefinition.",
-                            $"Expected {GenericRuleHelpers.FormatNode(context, placeholder.TypeDefinitionId)} or a subtype; actual {GenericRuleHelpers.FormatNode(context, child.Child.TypeDefinitionId)}.");
+                        continue;
                     }
+
+                    yield return new ValidationFinding(
+                        RuleId,
+                        Severity,
+                        child.Child.NodeId,
+                        GenericRuleHelpers.FormatBrowsePath(plausible.Declaration.BrowsePath),
+                        "OptionalPlaceholder child uses an incompatible reference type.",
+                        $"Expected {GenericRuleHelpers.FormatNode(context, plausible.Declaration.ReferenceTypeId)} or a subtype; actual {GenericRuleHelpers.FormatNode(context, child.Reference.ReferenceTypeId)}.");
                 }
             }
         }
@@ -80,4 +97,9 @@ public sealed class OptionalPlaceholderConformanceRule : IValidationRule
         public int GetHashCode(QualifiedName obj) =>
             HashCode.Combine(obj.NamespaceIndex, obj.Name);
     }
+
+    private sealed record PlaceholderCandidate(
+        InstanceDeclaration Declaration,
+        bool TypeCompatible,
+        bool ReferenceCompatible);
 }

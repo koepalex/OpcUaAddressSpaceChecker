@@ -26,6 +26,7 @@ public sealed class HasTypeDefinitionPresenceRule : IValidationRule
             node.NodeId,
             GenericRuleHelpers.FormatBrowseName(node.BrowseName),
             "Object or Variable has no HasTypeDefinition.",
-            "The materialized live node did not contain a TypeDefinition NodeId.");
+            "The materialized live node did not contain a TypeDefinition NodeId.",
+            Confidence: context.AbsenceConfidence);
     }
 }

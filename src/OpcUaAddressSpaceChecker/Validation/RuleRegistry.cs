@@ -72,10 +72,13 @@ public sealed class RuleRegistry
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(context);
 
-        return _rules
+        var applicable = _rules
             .Where(IsSelected)
             .Where(rule => rule.Applies(node, typeDefinition, context))
             .ToArray();
+        var exclusive = applicable.OfType<IExclusiveValidationRule>().Cast<IValidationRule>().ToArray();
+
+        return exclusive.Length > 0 ? exclusive : applicable;
     }
 
     private bool IsSelected(IValidationRule rule)

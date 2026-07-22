@@ -9,7 +9,7 @@ public sealed class MethodDeclarationRule : IValidationRule
     public string RuleId => "GEN-12";
     public string Category => "Generic";
     public Severity Severity => Severity.Warning;
-    public string Description => "Method InstanceDeclarations should be present and expose declared argument properties when determinable.";
+    public string Description => "Present Method instances expose their declared InputArguments and OutputArguments properties.";
 
     public bool Applies(LiveNode node, NodeState? typeDefinition, ValidationContext context) =>
         GenericRuleHelpers.HasUsableType(node, context);
@@ -26,20 +26,6 @@ public sealed class MethodDeclarationRule : IValidationRule
             var matches = GenericRuleHelpers.FindChildrenByBrowsePath(context, node, declarations, declaration.BrowsePath);
             if (matches.Count == 0)
             {
-                if (GenericRuleHelpers.IsMandatory(declaration) &&
-                    !GenericRuleHelpers.IsSuppressedByMissingOptionalAncestor(context, node, declaration, declarations))
-                {
-                    yield return new ValidationFinding(
-                        RuleId,
-                        Severity,
-                        node.NodeId,
-                        GenericRuleHelpers.FormatBrowsePath(declaration.BrowsePath),
-                        "Mandatory Method declaration is missing.",
-                        $"Expected Method {GenericRuleHelpers.FormatBrowseName(declaration.BrowseName)}.",
-                        GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations).NamespaceUri,
-                        GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations).ReferenceUrl);
-                }
-
                 continue;
             }
 
@@ -61,7 +47,8 @@ public sealed class MethodDeclarationRule : IValidationRule
                         "Method argument property declared by the type is missing on the instance method.",
                         $"Expected {GenericRuleHelpers.FormatBrowseName(argumentDeclaration.BrowseName)}.",
                         argumentRef.NamespaceUri,
-                        argumentRef.ReferenceUrl);
+                        argumentRef.ReferenceUrl,
+                        context.AbsenceConfidence);
                 }
             }
         }

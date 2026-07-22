@@ -81,4 +81,30 @@ public sealed class FindingFilterTests
         Assert.Single(result.Findings);
         Assert.Equal(0, result.SuppressedCount);
     }
+
+    [Fact]
+    public void Apply_strict_type_coverage_promotes_gen05_unless_config_overrides_it()
+    {
+        var node = new NodeId(5, 2);
+        var finding = Finding("GEN-05", Severity.Information, node, "2:Device/2:Extension");
+
+        var strict = FindingFilter.Apply(
+            [finding],
+            new Dictionary<NodeId, string>(),
+            new CheckerConfig().Normalize(),
+            strictTypeCoverage: true);
+
+        Assert.Equal(Severity.Warning, Assert.Single(strict.Findings).Severity);
+
+        var configured = CheckerConfigLoader.Parse("""
+        { "Rules": { "GEN-05": { "Severity": "Error" } } }
+        """);
+        var overridden = FindingFilter.Apply(
+            [finding],
+            new Dictionary<NodeId, string>(),
+            configured,
+            strictTypeCoverage: true);
+
+        Assert.Equal(Severity.Error, Assert.Single(overridden.Findings).Severity);
+    }
 }

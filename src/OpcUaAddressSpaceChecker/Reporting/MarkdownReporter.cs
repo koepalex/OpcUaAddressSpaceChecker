@@ -51,7 +51,14 @@ public sealed class MarkdownReporter : IReporter
         writer.WriteLine(
             $"**Nodes checked:** {report.TotalNodes} &nbsp;&nbsp; " +
             $"**Findings:** {report.TotalFindings} " +
-            $"(Errors: {report.ErrorCount}, Warnings: {report.WarningCount}, Information: {report.InformationCount})");
+            $"(Errors: {report.ErrorCount}, Warnings: {report.WarningCount}, Information: {report.InformationCount}; " +
+            $"Confirmed: {report.ConfirmedCount}, Inconclusive: {report.InconclusiveCount})");
+        writer.WriteLine();
+        writer.WriteLine(
+            $"**Validation view:** Authentication `{report.RunMetadata.AuthenticationMode}`, " +
+            $"requested `{report.RunMetadata.RequestedViewCompleteness}`, effective `{report.RunMetadata.EffectiveViewState}`.");
+        writer.WriteLine();
+        writer.WriteLine($"_{report.RunMetadata.ViewStateBasis}_");
         writer.WriteLine();
 
         if (report.Findings.Count == 0)
@@ -61,10 +68,14 @@ public sealed class MarkdownReporter : IReporter
         }
 
         var violations = report.Findings
-            .Where(finding => finding.Severity != Severity.Information)
+            .Where(finding =>
+                finding.Severity != Severity.Information &&
+                finding.Confidence == FindingConfidence.Confirmed)
             .ToArray();
         var informational = report.Findings
-            .Where(finding => finding.Severity == Severity.Information)
+            .Where(finding =>
+                finding.Severity == Severity.Information ||
+                finding.Confidence == FindingConfidence.Inconclusive)
             .ToArray();
 
         if (violations.Length > 0)
@@ -74,11 +85,11 @@ public sealed class MarkdownReporter : IReporter
 
         if (informational.Length > 0)
         {
-            writer.WriteLine("## Optional members not implemented (informational)");
+            writer.WriteLine("## Informational and inconclusive findings");
             writer.WriteLine();
             writer.WriteLine(
-                "_Optional declarations that are not materialized on the instance. These are conformant " +
-                "omissions, not violations._");
+                "_Advisories, conformant omissions, and findings that cannot be confirmed from the current validation view. " +
+                "These entries do not fail the run._");
             writer.WriteLine();
             WriteFindingGroups(informational, writer);
         }
@@ -87,7 +98,7 @@ public sealed class MarkdownReporter : IReporter
     private void WriteFindingGroups(IReadOnlyCollection<ValidationFinding> findings, TextWriter writer)
     {
         var groups = findings
-            .GroupBy(finding => ResolveUri(finding.NodeId), StringComparer.Ordinal)
+            .GroupBy(ResolveUri, StringComparer.Ordinal)
             .OrderBy(group => group.Key, StringComparer.Ordinal);
 
         foreach (var group in groups)
@@ -98,8 +109,8 @@ public sealed class MarkdownReporter : IReporter
             writer.WriteLine();
             writer.WriteLine($"Namespace: `{EscapeCell(group.Key)}`");
             writer.WriteLine();
-            writer.WriteLine("| BrowsePath | NodeId | Rule violated | Severity | Short description | How to solve | Evidence |");
-            writer.WriteLine("| --- | --- | --- | --- | --- | --- | --- |");
+            writer.WriteLine("| BrowsePath | NodeId | Rule violated | Severity | Confidence | Short description | How to solve | Evidence |");
+            writer.WriteLine("| --- | --- | --- | --- | --- | --- | --- | --- |");
 
             foreach (var finding in group
                          .OrderBy(finding => (int)finding.Severity * -1)
@@ -114,6 +125,7 @@ public sealed class MarkdownReporter : IReporter
                     $"| {EscapeCell(FormatNodeId(finding.NodeId))} " +
                     $"| {ruleCell} " +
                     $"| {finding.Severity} " +
+                    $"| {finding.Confidence} " +
                     $"| {EscapeCell(finding.Message)} " +
                     $"| {EscapeCell(reference.Remediation)} " +
                     $"| {EscapeCell(finding.Details ?? string.Empty)} |");
@@ -123,8 +135,14 @@ public sealed class MarkdownReporter : IReporter
         }
     }
 
-    private string ResolveUri(NodeId nodeId)
+    private string ResolveUri(ValidationFinding finding)
     {
+        if (!string.IsNullOrWhiteSpace(finding.DeclaringTypeNamespaceUri))
+        {
+            return finding.DeclaringTypeNamespaceUri;
+        }
+
+        var nodeId = finding.NodeId;
         if (nodeId is not null && _namespaceUrisByIndex.TryGetValue(nodeId.NamespaceIndex, out var uri) &&
             !string.IsNullOrWhiteSpace(uri))
         {

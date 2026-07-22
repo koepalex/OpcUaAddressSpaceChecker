@@ -53,7 +53,8 @@ public sealed class MandatoryPlaceholderRule : IValidationRule
                     $"{GenericRuleHelpers.FormatNode(context, declaration.ReferenceTypeId)} and TypeDefinition " +
                     $"{GenericRuleHelpers.FormatNode(context, declaration.TypeDefinitionId)} or subtypes.",
                     declaringRef.NamespaceUri,
-                    declaringRef.ReferenceUrl);
+                    declaringRef.ReferenceUrl,
+                    context.AbsenceConfidence);
             }
         }
     }

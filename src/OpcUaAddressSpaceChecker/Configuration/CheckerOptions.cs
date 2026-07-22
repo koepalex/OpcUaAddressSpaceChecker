@@ -55,4 +55,19 @@ public class CheckerOptions : OpcUaClientOptions
     /// when no file is found.
     /// </summary>
     public string? ConfigPath { get; set; }
+
+    /// <summary>
+    /// Requested validation-view completeness policy: auto, complete, or restricted.
+    /// </summary>
+    public string ViewCompleteness { get; set; } = "auto";
+
+    /// <summary>
+    /// Fail before validation when the effective validation view is restricted.
+    /// </summary>
+    public bool RequireCompleteView { get; set; }
+
+    /// <summary>
+    /// Promote undeclared instance-specific children from advisory to Warning.
+    /// </summary>
+    public bool StrictTypeCoverage { get; set; }
 }

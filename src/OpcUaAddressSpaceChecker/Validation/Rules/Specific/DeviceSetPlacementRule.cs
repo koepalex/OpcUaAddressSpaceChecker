@@ -42,7 +42,8 @@ public sealed class DeviceSetPlacementRule : IValidationRule
                 node.NodeId,
                 CompanionSpecRuleHelpers.FormatNode(node),
                 "DI ComponentType instance is not reachable from the DeviceSet entry point by hierarchical references.",
-                $"Expected reachability from {entry.EntryPointModelUri}#{entry.EntryPointBrowseName}.");
+                $"Expected reachability from {entry.EntryPointModelUri}#{entry.EntryPointBrowseName}.",
+                Confidence: context.AbsenceConfidence);
         }
     }
 }

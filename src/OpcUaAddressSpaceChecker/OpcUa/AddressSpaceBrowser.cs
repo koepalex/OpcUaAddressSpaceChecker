@@ -36,6 +36,7 @@ public sealed class AddressSpaceBrowser
             var stopwatch = Stopwatch.StartNew();
             var discovered = new Dictionary<NodeId, DiscoveredNode>();
             var relationships = new List<RawReference>();
+            var browseStatusCodes = new Dictionary<NodeId, StatusCode>();
             var queued = new Queue<NodeId>();
             var queuedOrVisited = new HashSet<NodeId>();
             var rootNodeId = ObjectIds.ObjectsFolder;
@@ -58,6 +59,7 @@ public sealed class AddressSpaceBrowser
                     session,
                     level,
                     browseBatchSize,
+                    browseStatusCodes,
                     ct).ConfigureAwait(false);
 
                 foreach (var reference in references)
@@ -96,7 +98,7 @@ public sealed class AddressSpaceBrowser
                 GetReadBatchSize(session),
                 ct).ConfigureAwait(false);
 
-            var nodes = MaterializeNodes(discovered, relationships, attributes);
+            var nodes = MaterializeNodes(discovered, relationships, attributes, browseStatusCodes);
             var browsePaths = BuildBrowsePaths(
                 nodes,
                 relationships.Select(relationship => (relationship.SourceId, relationship.TargetId)).ToArray(),
@@ -125,6 +127,7 @@ public sealed class AddressSpaceBrowser
         ISession session,
         IReadOnlyList<NodeId> nodeIds,
         int initialBatchSize,
+        IDictionary<NodeId, StatusCode> browseStatusCodes,
         CancellationToken cancellationToken)
     {
         var references = new List<RawReference>();
@@ -139,7 +142,11 @@ public sealed class AddressSpaceBrowser
 
             try
             {
-                references.AddRange(await BrowseBatchOnceAsync(session, batch, cancellationToken).ConfigureAwait(false));
+                references.AddRange(await BrowseBatchOnceAsync(
+                    session,
+                    batch,
+                    browseStatusCodes,
+                    cancellationToken).ConfigureAwait(false));
                 offset += take;
             }
             catch (Exception ex) when (IsBadEncodingLimitsExceeded(ex) && batchSize > 1)
@@ -157,6 +164,7 @@ public sealed class AddressSpaceBrowser
     private async Task<List<RawReference>> BrowseBatchOnceAsync(
         ISession session,
         IReadOnlyList<NodeId> nodeIds,
+        IDictionary<NodeId, StatusCode> browseStatusCodes,
         CancellationToken cancellationToken)
     {
         var descriptions = new BrowseDescriptionCollection(nodeIds.Select(CreateHierarchicalBrowseDescription));
@@ -174,6 +182,7 @@ public sealed class AddressSpaceBrowser
         {
             var result = response.Results[i];
             ThrowIfEncodingLimitResult(result.StatusCode);
+            browseStatusCodes[nodeIds[i]] = result.StatusCode;
 
             if (StatusCode.IsBad(result.StatusCode))
             {
@@ -208,6 +217,7 @@ public sealed class AddressSpaceBrowser
 
                 if (StatusCode.IsBad(result.StatusCode))
                 {
+                    browseStatusCodes[sourceId] = result.StatusCode;
                     _logger.LogDebug("BrowseNext of {NodeId} returned {StatusCode}", sourceId, result.StatusCode);
                     continue;
                 }
@@ -266,13 +276,13 @@ public sealed class AddressSpaceBrowser
         }
     }
 
-    private async Task<IReadOnlyDictionary<NodeId, NodeAttributes>> ReadNodeAttributesAdaptiveAsync(
+    private async Task<IReadOnlyDictionary<NodeId, IReadOnlyDictionary<uint, DataValue>>> ReadNodeAttributesAdaptiveAsync(
         ISession session,
         IReadOnlyList<NodeId> nodeIds,
         int initialBatchSize,
         CancellationToken cancellationToken)
     {
-        var attributes = new Dictionary<NodeId, NodeAttributes>();
+        var attributes = new Dictionary<NodeId, Dictionary<uint, DataValue>>();
         var requests = new List<ReadRequest>(nodeIds.Count * AttributeIds.Length);
 
         foreach (var nodeId in nodeIds)
@@ -299,11 +309,11 @@ public sealed class AddressSpaceBrowser
                 {
                     if (!attributes.TryGetValue(batch[i].NodeId, out var nodeAttributes))
                     {
-                        nodeAttributes = new NodeAttributes();
+                        nodeAttributes = [];
                         attributes[batch[i].NodeId] = nodeAttributes;
                     }
 
-                    ApplyAttribute(nodeAttributes, batch[i].AttributeId, values[i]);
+                    nodeAttributes[batch[i].AttributeId] = values[i];
                 }
 
                 offset += take;
@@ -317,7 +327,9 @@ public sealed class AddressSpaceBrowser
             }
         }
 
-        return attributes;
+        return attributes.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyDictionary<uint, DataValue>)entry.Value);
     }
 
     private static async Task<DataValue[]> ReadBatchOnceAsync(
@@ -339,60 +351,6 @@ public sealed class AddressSpaceBrowser
             ct: cancellationToken).ConfigureAwait(false);
 
         return response.Results.ToArray();
-    }
-
-    private static void ApplyAttribute(NodeAttributes target, uint attributeId, DataValue value)
-    {
-        if (StatusCode.IsBad(value.StatusCode))
-        {
-            return;
-        }
-
-        var raw = value.WrappedValue.Value;
-        switch (attributeId)
-        {
-            case Attributes.NodeClass:
-                target.NodeClass = raw switch
-                {
-                    NodeClass nodeClass => nodeClass,
-                    int nodeClassValue => (NodeClass)nodeClassValue,
-                    uint nodeClassValue => (NodeClass)nodeClassValue,
-                    _ => target.NodeClass
-                };
-                break;
-            case Attributes.BrowseName:
-                if (raw is QualifiedName browseName)
-                {
-                    target.BrowseName = browseName;
-                }
-                break;
-            case Attributes.DisplayName:
-                if (raw is LocalizedText displayName)
-                {
-                    target.DisplayName = displayName;
-                }
-                break;
-            case Attributes.DataType:
-                if (raw is NodeId dataType && !NodeId.IsNull(dataType))
-                {
-                    target.DataType = dataType;
-                }
-                break;
-            case Attributes.ValueRank:
-                if (raw is int valueRank)
-                {
-                    target.ValueRank = valueRank;
-                }
-                break;
-            case Attributes.ArrayDimensions:
-                target.ArrayDimensions = raw switch
-                {
-                    uint[] dimensions => dimensions,
-                    UInt32Collection dimensions => dimensions.ToArray(),
-                    _ => target.ArrayDimensions
-                };
-                break;
-        }
     }
 
     /// <summary>
@@ -470,24 +428,23 @@ public sealed class AddressSpaceBrowser
     private static List<LiveNode> MaterializeNodes(
         IReadOnlyDictionary<NodeId, DiscoveredNode> discovered,
         IReadOnlyCollection<RawReference> relationships,
-        IReadOnlyDictionary<NodeId, NodeAttributes> attributes)
+        IReadOnlyDictionary<NodeId, IReadOnlyDictionary<uint, DataValue>> attributes,
+        IReadOnlyDictionary<NodeId, StatusCode> browseStatusCodes)
     {
         var nodes = new Dictionary<NodeId, LiveNode>();
 
         foreach (var item in discovered.Values)
         {
             attributes.TryGetValue(item.NodeId, out var nodeAttributes);
-            nodes[item.NodeId] = new LiveNode
-            {
-                NodeId = item.NodeId,
-                BrowseName = nodeAttributes?.BrowseName ?? item.BrowseName,
-                DisplayName = nodeAttributes?.DisplayName ?? item.DisplayName,
-                NodeClass = nodeAttributes?.NodeClass ?? item.NodeClass,
-                TypeDefinitionId = item.TypeDefinitionId,
-                DataType = nodeAttributes?.DataType,
-                ValueRank = nodeAttributes?.ValueRank,
-                ArrayDimensions = nodeAttributes?.ArrayDimensions ?? []
-            };
+            browseStatusCodes.TryGetValue(item.NodeId, out var browseStatusCode);
+            nodes[item.NodeId] = MaterializeNode(
+                item.NodeId,
+                item.BrowseName,
+                item.DisplayName,
+                item.NodeClass,
+                item.TypeDefinitionId,
+                nodeAttributes,
+                browseStatusCodes.ContainsKey(item.NodeId) ? browseStatusCode : null);
         }
 
         foreach (var relationship in relationships)
@@ -510,6 +467,98 @@ public sealed class AddressSpaceBrowser
         var result = nodes.Values.ToList();
         result.Sort((x, y) => string.CompareOrdinal(x.NodeId.ToString(), y.NodeId.ToString()));
         return result;
+    }
+
+    internal static LiveNode MaterializeNode(
+        NodeId nodeId,
+        QualifiedName browsedBrowseName,
+        LocalizedText browsedDisplayName,
+        NodeClass browsedNodeClass,
+        NodeId? typeDefinitionId,
+        IReadOnlyDictionary<uint, DataValue>? attributes,
+        StatusCode? browseStatusCode)
+    {
+        var statusCodes = attributes?.ToDictionary(entry => entry.Key, entry => entry.Value.StatusCode)
+            ?? new Dictionary<uint, StatusCode>();
+
+        return new LiveNode
+        {
+            NodeId = nodeId,
+            BrowseName = ReadGoodValue<QualifiedName>(attributes, Attributes.BrowseName) ?? browsedBrowseName,
+            DisplayName = ReadGoodValue<LocalizedText>(attributes, Attributes.DisplayName) ?? browsedDisplayName,
+            NodeClass = ReadNodeClass(attributes) ?? browsedNodeClass,
+            TypeDefinitionId = typeDefinitionId,
+            DataType = ReadGoodValue<NodeId>(attributes, Attributes.DataType),
+            ValueRank = ReadInt32Value(attributes, Attributes.ValueRank),
+            ArrayDimensions = ReadArrayDimensions(attributes),
+            BrowseStatusCode = browseStatusCode,
+            AttributeStatusCodes = statusCodes
+        };
+    }
+
+    private static T? ReadGoodValue<T>(
+        IReadOnlyDictionary<uint, DataValue>? attributes,
+        uint attributeId)
+        where T : class
+    {
+        if (attributes == null ||
+            !attributes.TryGetValue(attributeId, out var value) ||
+            StatusCode.IsBad(value.StatusCode))
+        {
+            return null;
+        }
+
+        return value.WrappedValue.Value as T;
+    }
+
+    private static int? ReadInt32Value(
+        IReadOnlyDictionary<uint, DataValue>? attributes,
+        uint attributeId)
+    {
+        if (attributes == null ||
+            !attributes.TryGetValue(attributeId, out var value) ||
+            StatusCode.IsBad(value.StatusCode))
+        {
+            return null;
+        }
+
+        return value.WrappedValue.Value is int result ? result : null;
+    }
+
+    private static NodeClass? ReadNodeClass(IReadOnlyDictionary<uint, DataValue>? attributes)
+    {
+        if (attributes == null ||
+            !attributes.TryGetValue(Attributes.NodeClass, out var value) ||
+            StatusCode.IsBad(value.StatusCode))
+        {
+            return null;
+        }
+
+        return value.WrappedValue.Value switch
+        {
+            NodeClass nodeClass => nodeClass,
+            int nodeClassValue => (NodeClass)nodeClassValue,
+            uint nodeClassValue => (NodeClass)nodeClassValue,
+            _ => null
+        };
+    }
+
+    private static IReadOnlyList<uint> ReadArrayDimensions(
+        IReadOnlyDictionary<uint, DataValue>? attributes)
+    {
+        if (attributes == null ||
+            !attributes.TryGetValue(Attributes.ArrayDimensions, out var value) ||
+            StatusCode.IsBad(value.StatusCode))
+        {
+            return [];
+        }
+
+        return value.WrappedValue.Value switch
+        {
+            uint[] dimensions => dimensions,
+            UInt32Collection dimensions => dimensions.ToArray(),
+            _ => []
+        };
     }
 
     private static int GetBrowseBatchSize(ISession session)
@@ -578,13 +627,4 @@ public sealed class AddressSpaceBrowser
 
     private sealed record ReadRequest(NodeId NodeId, uint AttributeId);
 
-    private sealed class NodeAttributes
-    {
-        public QualifiedName BrowseName { get; set; } = QualifiedName.Null;
-        public LocalizedText DisplayName { get; set; } = LocalizedText.Null;
-        public NodeClass NodeClass { get; set; } = NodeClass.Unspecified;
-        public NodeId? DataType { get; set; }
-        public int? ValueRank { get; set; }
-        public IReadOnlyList<uint> ArrayDimensions { get; set; } = [];
-    }
 }

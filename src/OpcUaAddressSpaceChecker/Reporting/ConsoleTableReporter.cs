@@ -28,7 +28,9 @@ public sealed class ConsoleTableReporter : IReporter
         ArgumentNullException.ThrowIfNull(writer);
 
         writer.WriteLine(
-            $"Summary: totalNodes={report.TotalNodes}, totalFindings={report.TotalFindings}, errors={report.ErrorCount}, warnings={report.WarningCount}, information={report.InformationCount}");
+            $"Summary: totalNodes={report.TotalNodes}, totalFindings={report.TotalFindings}, errors={report.ErrorCount}, warnings={report.WarningCount}, information={report.InformationCount}, confirmed={report.ConfirmedCount}, inconclusive={report.InconclusiveCount}");
+        writer.WriteLine(
+            $"Validation view: authentication={report.RunMetadata.AuthenticationMode}, requested={report.RunMetadata.RequestedViewCompleteness}, effective={report.RunMetadata.EffectiveViewState}, accessDenied={report.RunMetadata.AccessDeniedCount}");
 
         if (report.TotalFindings == 0)
         {
@@ -60,13 +62,14 @@ public sealed class ConsoleTableReporter : IReporter
             {
                 Clean(finding.RuleId),
                 FormatSeverity(finding.Severity),
+                Clean(finding.Confidence.ToString()),
                 Clean(FormatNodeId(finding.NodeId)),
                 Clean(finding.BrowsePath),
                 Clean(finding.Message)
             })
             .ToArray();
 
-        var headers = new[] { "RuleId", "Severity", "NodeId", "BrowsePath", "Message" };
+        var headers = new[] { "RuleId", "Severity", "Confidence", "NodeId", "BrowsePath", "Message" };
         var widths = Enumerable.Range(0, headers.Length)
             .Select(index => Math.Max(headers[index].Length, rows.Max(row => row[index].Length)))
             .ToArray();
