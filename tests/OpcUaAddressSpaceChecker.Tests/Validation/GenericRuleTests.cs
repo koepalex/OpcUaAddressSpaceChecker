@@ -288,6 +288,92 @@ public sealed class GenericRuleTests(NodesetTestFixture fixture) : IClassFixture
         Assert.Empty(rule.Validate(instance, identificationType, fixture.Context));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Gen08_accepts_parallel_component_and_notifier_references(bool notifierFirst)
+    {
+        var type = fixture.FindType(NodesetTestFixture.UaModelUri, "ServerType");
+        var declaration = fixture.Declaration(type.NodeId, "ServerDiagnostics");
+        var root = LiveNodeFactory.Object(new QualifiedName("Server", 0), type.NodeId);
+        var child = LiveNodeFactory.Object(declaration.BrowseName, declaration.TypeDefinitionId);
+        LiveNodeFactory.AddChild(root, child, declaration.ReferenceTypeId);
+        root.ForwardHierarchicalReferences.Insert(notifierFirst ? 0 : 1, new LiveReference(
+            ReferenceTypeIds.HasNotifier, child.NodeId, child.BrowseName, child.DisplayName, child.NodeClass));
+
+        Assert.Empty(new ReferenceTypeConformanceRule().Validate(root, type, fixture.Context));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void Gen08_accepts_additional_references_to_variable_children(bool property, bool additionalFirst)
+    {
+        var root = LiveNodeFactory.Object(new QualifiedName("Device", 2), ObjectTypeIds.BaseObjectType);
+        var child = LiveNodeFactory.Variable(new QualifiedName("Reading", 2),
+            property ? VariableTypeIds.PropertyType : VariableTypeIds.BaseDataVariableType);
+        LiveNodeFactory.AddChild(root, child,
+            property ? ReferenceTypeIds.HasProperty : ReferenceTypeIds.HasOrderedComponent);
+        root.ForwardHierarchicalReferences.Insert(additionalFirst ? 0 : 1, new LiveReference(
+            ReferenceTypeIds.Organizes, child.NodeId, child.BrowseName, child.DisplayName, child.NodeClass));
+
+        Assert.Empty(new ReferenceTypeConformanceRule().Validate(root, null, fixture.Context));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Gen08_still_reports_variables_without_a_compatible_reference(bool property)
+    {
+        var root = LiveNodeFactory.Object(new QualifiedName("Device", 2), ObjectTypeIds.BaseObjectType);
+        var child = LiveNodeFactory.Variable(new QualifiedName("Reading", 2),
+            property ? VariableTypeIds.PropertyType : VariableTypeIds.BaseDataVariableType);
+        LiveNodeFactory.AddChild(root, child, ReferenceTypeIds.Organizes);
+
+        var finding = Assert.Single(new ReferenceTypeConformanceRule().Validate(root, null, fixture.Context));
+
+        Assert.Equal(child.NodeId, finding.NodeId);
+        Assert.Contains(property ? "HasProperty" : "HasComponent", finding.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Gen08_does_not_hide_an_invalid_same_named_child_behind_a_valid_target()
+    {
+        var type = fixture.FindType(NodesetTestFixture.UaModelUri, "ServerType");
+        var declaration = fixture.Declaration(type.NodeId, "ServerDiagnostics");
+        var root = LiveNodeFactory.Object(new QualifiedName("Server", 0), type.NodeId);
+        var valid = LiveNodeFactory.Object(declaration.BrowseName, declaration.TypeDefinitionId);
+        var invalid = LiveNodeFactory.Object(declaration.BrowseName, declaration.TypeDefinitionId);
+        LiveNodeFactory.AddChild(root, valid, declaration.ReferenceTypeId);
+        LiveNodeFactory.AddChild(root, invalid, ReferenceTypeIds.HasNotifier);
+
+        var finding = Assert.Single(new ReferenceTypeConformanceRule().Validate(root, type, fixture.Context));
+
+        Assert.Equal(invalid.NodeId, finding.NodeId);
+    }
+
+    [Fact]
+    public void Gen08_does_not_use_a_compatible_reference_from_another_parent()
+    {
+        var type = fixture.FindType(NodesetTestFixture.UaModelUri, "ServerType");
+        var parentDeclaration = fixture.Declaration(type.NodeId, "ServerDiagnostics");
+        var childDeclaration = fixture.Declaration(type.NodeId, "ServerDiagnostics", "SessionsDiagnosticsSummary");
+        var root = LiveNodeFactory.Object(new QualifiedName("Server", 0), type.NodeId);
+        var first = LiveNodeFactory.Object(parentDeclaration.BrowseName, parentDeclaration.TypeDefinitionId);
+        var second = LiveNodeFactory.Object(parentDeclaration.BrowseName, parentDeclaration.TypeDefinitionId);
+        var child = LiveNodeFactory.Object(childDeclaration.BrowseName, childDeclaration.TypeDefinitionId);
+        LiveNodeFactory.AddChild(root, first, parentDeclaration.ReferenceTypeId);
+        LiveNodeFactory.AddChild(root, second, parentDeclaration.ReferenceTypeId);
+        LiveNodeFactory.AddChild(first, child, childDeclaration.ReferenceTypeId);
+        LiveNodeFactory.AddChild(second, child, ReferenceTypeIds.HasNotifier);
+
+        var finding = Assert.Single(new ReferenceTypeConformanceRule().Validate(root, type, fixture.Context));
+
+        Assert.Equal(child.NodeId, finding.NodeId);
+    }
+
     [Fact]
     public void Gen10_skips_core_namespace_object_without_type_definition()
     {
