@@ -15,19 +15,22 @@ public sealed class ReferenceTypeConformanceRule : IValidationRule
 
     public IEnumerable<ValidationFinding> Validate(LiveNode node, NodeState? typeDefinition, ValidationContext context)
     {
-        foreach (var child in GenericRuleHelpers.GetChildLinks(node).Where(child => child.Child.NodeClass == NodeClass.Variable))
+        foreach (var links in GenericRuleHelpers.GetChildLinks(node)
+                     .Where(child => child.Child.NodeClass == NodeClass.Variable)
+                     .GroupBy(child => child.Child.NodeId))
         {
+            var child = links.First();
             var isProperty = GenericRuleHelpers.IsTypeCompatible(context, child.Child.TypeDefinitionId, GenericRuleHelpers.PropertyType);
             var isDataVariable = GenericRuleHelpers.IsTypeCompatible(context, child.Child.TypeDefinitionId, GenericRuleHelpers.BaseDataVariableType) && !isProperty;
 
             if (isProperty &&
-                !GenericRuleHelpers.IsReferenceTypeCompatible(context, child.Reference.ReferenceTypeId, GenericRuleHelpers.HasProperty))
+                !links.Any(link => GenericRuleHelpers.IsReferenceTypeCompatible(context, link.Reference.ReferenceTypeId, GenericRuleHelpers.HasProperty)))
             {
                 yield return CreateFinding(context, child, "Property variable is not referenced with HasProperty.", GenericRuleHelpers.HasProperty);
             }
 
             if (isDataVariable &&
-                !GenericRuleHelpers.IsReferenceTypeCompatible(context, child.Reference.ReferenceTypeId, GenericRuleHelpers.HasComponent))
+                !links.Any(link => GenericRuleHelpers.IsReferenceTypeCompatible(context, link.Reference.ReferenceTypeId, GenericRuleHelpers.HasComponent)))
             {
                 yield return CreateFinding(context, child, "DataVariable is not referenced with HasComponent.", GenericRuleHelpers.HasComponent);
             }
@@ -55,13 +58,15 @@ public sealed class ReferenceTypeConformanceRule : IValidationRule
 
             var declarations = context.GetInstanceDeclarations(node);
             var declaringRef = GenericRuleHelpers.ResolveDeclaringTypeReference(context, node, declaration, declarations);
-            foreach (var match in GenericRuleHelpers.FindChildrenByBrowsePath(context, node, declarations, declaration.BrowsePath))
+            foreach (var links in GenericRuleHelpers.FindChildrenByBrowsePath(context, node, declarations, declaration.BrowsePath)
+                         .GroupBy(match => (match.Parent.NodeId, match.Child.NodeId)))
             {
-                if (GenericRuleHelpers.IsReferenceTypeCompatible(context, match.Reference.ReferenceTypeId, declaration.ReferenceTypeId))
+                if (links.Any(link => GenericRuleHelpers.IsReferenceTypeCompatible(context, link.Reference.ReferenceTypeId, declaration.ReferenceTypeId)))
                 {
                     continue;
                 }
 
+                var match = links.First();
                 yield return new ValidationFinding(
                     RuleId,
                     Severity,

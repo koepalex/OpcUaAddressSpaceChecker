@@ -145,6 +145,12 @@ validation scope, or `restricted` to force conservative results.
 | `PUMPS-02`   | Pumps     | Error    | Pumps ConfigurationGroupType descendants are nested below Configuration.                          | Prevents ConfigurationGroupType descendants from being exposed directly below a pump.                 | Move ConfigurationGroupType descendant nodes under the pump Configuration object.                        |
 | `PUMPS-03`   | Pumps     | Error    | Pumps Design and SystemRequirements objects are nested below Configuration.                       | Enforces the canonical PumpType path `Configuration/Design` and `Configuration/SystemRequirements`.  | Move Design and SystemRequirements below Configuration instead of directly below the pump.               |
 
+`GEN-08` requires a compatible reference between each parent and child, not that every
+reference to the child has the declared type. For example, a declared `HasComponent`
+reference may coexist with an additional `HasNotifier` reference to the same event source.
+A compatible reference to a different node or from a different parent does not satisfy
+the declaration.
+
 ## Output formats
 
 The `--output-format` option selects how findings are rendered:
